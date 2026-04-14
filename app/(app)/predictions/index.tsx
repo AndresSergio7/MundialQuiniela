@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MatchRow } from '@/components/MatchRow';
 import { Button } from '@/components/ui/Button';
@@ -7,29 +7,53 @@ import { colors, spacing, typography } from '@/components/ui/theme';
 import { useAuth } from '@/hooks/useAuth';
 import { listMatches } from '@/services/matches';
 import { getPredictions, savePrediction, submitPredictions } from '@/services/predictions';
-import type { Match, Prediction } from '@/types';
+import { listMyPools } from '@/services/pools';
+import type { Match, Prediction, Pool } from '@/types';
 
 const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
-// TEMPORAL: cambia esto por el pool real luego
-const TEMP_POOL_ID = 'REPLACE_WITH_REAL_POOL_ID';
-
 export default function PredictionsScreen() {
   const { user } = useAuth();
+
+  const [pools, setPools] = useState<Pool[]>([]);
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
+
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, { home: string; away: string }>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingPools, setLoadingPools] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
 
-  const poolId = TEMP_POOL_ID;
+  useEffect(() => {
+    loadPools();
+  }, [user?.id]);
 
   useEffect(() => {
     loadData();
-  }, [user?.id, poolId]);
+  }, [user?.id, selectedPoolId]);
+
+  async function loadPools() {
+    if (!user?.id) return;
+
+    try {
+      setLoadingPools(true);
+      const myPools = await listMyPools(user.id);
+      setPools(myPools);
+
+      if (myPools.length > 0 && !selectedPoolId) {
+        setSelectedPoolId(myPools[0].id);
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Could not load your pools.');
+    } finally {
+      setLoadingPools(false);
+    }
+  }
 
   async function loadData() {
-    if (!user?.id || !poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
+    if (!user?.id || !selectedPoolId) {
       setLoading(false);
       return;
     }
@@ -39,7 +63,7 @@ export default function PredictionsScreen() {
 
       const [matchesData, userPredictions] = await Promise.all([
         listMatches(),
-        getPredictions(user.id, poolId),
+        getPredictions(user.id, selectedPoolId),
       ]);
 
       setMatches(matchesData);
@@ -53,6 +77,7 @@ export default function PredictionsScreen() {
       });
 
       setPredictions(mapped);
+      setIsLocked(false);
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Could not load predictions.');
@@ -74,8 +99,8 @@ export default function PredictionsScreen() {
   }
 
   async function handleSubmit() {
-    if (!user?.id || !poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
-      Alert.alert('Error', 'Set a real pool id first.');
+    if (!user?.id || !selectedPoolId) {
+      Alert.alert('Error', 'Select a pool first.');
       return;
     }
 
@@ -87,7 +112,7 @@ export default function PredictionsScreen() {
         if (!pred || pred.home === '' || pred.away === '') continue;
 
         await savePrediction({
-          pool_id: poolId,
+          pool_id: selectedPoolId,
           user_id: user.id,
           match_id: match.id,
           home_score: Number(pred.home),
@@ -95,7 +120,7 @@ export default function PredictionsScreen() {
         });
       }
 
-      await submitPredictions(poolId, user.id);
+      await submitPredictions(selectedPoolId, user.id);
       setIsLocked(true);
       Alert.alert('Success', 'Your predictions were submitted.');
     } catch (error) {
@@ -115,12 +140,22 @@ export default function PredictionsScreen() {
     [matches]
   );
 
-  if (!poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
+  if (loadingPools) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.container}>
+          <Text style={styles.loadingText}>Loading pools...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (pools.length === 0) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.container}>
           <Text style={styles.title}>My Predictions</Text>
-          <Text style={styles.subtitle}>Add a real pool id in the screen file first.</Text>
+          <Text style={styles.subtitle}>Create or join a pool first.</Text>
         </View>
       </SafeAreaView>
     );
@@ -141,6 +176,29 @@ export default function PredictionsScreen() {
       <View style={styles.container}>
         <Text style={styles.title}>My Predictions</Text>
         <Text style={styles.subtitle}>Predict the exact score for each match</Text>
+
+        <Text style={styles.poolLabel}>Select Pool</Text>
+        <FlatList
+          data={pools}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.poolList}
+          renderItem={({ item }) => {
+            const active = item.id === selectedPoolId;
+
+            return (
+              <Pressable
+                onPress={() => setSelectedPoolId(item.id)}
+                style={[styles.poolChip, active && styles.poolChipActive]}
+              >
+                <Text style={[styles.poolChipText, active && styles.poolChipTextActive]}>
+                  {item.name}
+                </Text>
+              </Pressable>
+            );
+          }}
+        />
 
         <FlatList
           data={groupedMatches}
@@ -211,6 +269,34 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: 40,
+  },
+  poolLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+    marginBottom: 8,
+    letterSpacing: 0.4,
+  },
+  poolList: {
+    paddingBottom: 12,
+  },
+  poolChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#E5E7EB',
+    marginRight: 8,
+  },
+  poolChipActive: {
+    backgroundColor: colors.primary,
+  },
+  poolChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  poolChipTextActive: {
+    color: '#FFFFFF',
   },
   matchList: {
     paddingBottom: 24,
