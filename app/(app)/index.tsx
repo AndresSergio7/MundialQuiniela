@@ -39,17 +39,18 @@ export default function HomeScreen() {
     const loadSubmissions = async () => {
       if (!user || !pools.length) return;
       const map: Record<string, Submission | null> = {};
+
       for (const pool of pools) {
         map[pool.id] = await getSubmissionStatus(pool.id, user.id);
       }
+
       setSubmissions(map);
     };
+
     loadSubmissions();
   }, [pools, user]);
 
   async function handleCreatePool() {
-    if (!poolName.trim()) return;
-    if (!user) return;
     const trimmedName = poolName.trim();
 
     if (!trimmedName) {
@@ -71,27 +72,15 @@ export default function HomeScreen() {
     }
 
     setCreating(true);
-    const { pool, error } = await createPool(user.id, poolName.trim());
-    setCreating(false);
 
-    if (error) {
-      Alert.alert('Error', error);
-      return;
-    }
     try {
       const { pool, error } = await createPool(user.id, trimmedName);
 
-    setShowCreateModal(false);
-    setPoolName('');
-    await fetchPools();
       if (error) {
         Alert.alert('Error', error);
         return;
       }
 
-    if (pool) {
-      setCurrentPool(pool);
-      router.push('/(app)/predictions');
       setShowCreateModal(false);
       setPoolName('');
       await fetchPools();
@@ -101,7 +90,8 @@ export default function HomeScreen() {
         router.push('/(app)/predictions');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create pool.';
+      const message =
+        error instanceof Error ? error.message : 'Failed to create pool.';
       Alert.alert('Error', message);
     } finally {
       setCreating(false);
@@ -115,7 +105,10 @@ export default function HomeScreen() {
 
   const deadline = new Date('2026-06-11T18:00:00Z');
   const now = new Date();
-  const daysLeft = Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000));
+  const daysLeft = Math.max(
+    0,
+    Math.ceil((deadline.getTime() - now.getTime()) / 86400000)
+  );
 
   return (
     <ScrollView
@@ -123,17 +116,102 @@ export default function HomeScreen() {
       contentContainerStyle={styles.container}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchPools} />}
     >
-      {/* Header Banner */}
       <Card style={styles.banner}>
         <Text style={styles.bannerTitle}>FIFA World Cup 2026</Text>
         <Text style={styles.bannerSub}>
-          {daysLeft > 0
-            ? `${daysLeft} days until kickoff`
-            : 'Tournament has started!'}
-@@ -179,50 +195,51 @@ export default function HomeScreen() {
+          {daysLeft > 0 ? `${daysLeft} days until kickoff` : 'Tournament has started!'}
+        </Text>
+        {profile?.full_name ? (
+          <Text style={styles.bannerUser}>Welcome, {profile.full_name}</Text>
+        ) : null}
+      </Card>
+
+      {!entitlement?.has_app_access ? (
+        <Card style={styles.accessBanner}>
+          <Text style={styles.accessTitle}>App access required</Text>
+          <Text style={styles.accessText}>
+            Purchase access to create and submit your pools.
+          </Text>
+          <Button
+            title="Buy Access"
+            onPress={() => router.push('/(app)/purchase')}
+            style={styles.accessButton}
+          />
+        </Card>
+      ) : null}
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Your Pools</Text>
+        <Button
+          title="Create Pool"
+          onPress={() => setShowCreateModal(true)}
+          fullWidth={false}
+        />
+      </View>
+
+      {loading ? (
+        <Card>
+          <Text style={styles.emptyText}>Loading pools...</Text>
+        </Card>
+      ) : !pools.length ? (
+        <Card>
+          <Text style={styles.emptyTitle}>No pools yet</Text>
+          <Text style={styles.emptyText}>
+            Create your first pool and start predicting the World Cup.
+          </Text>
+        </Card>
+      ) : (
+        <FlatList
+          data={pools}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => {
+            const submission = submissions[item.id];
+            const submitted = Boolean(submission);
+
+            return (
+              <TouchableOpacity activeOpacity={0.9} onPress={() => handleSelectPool(item)}>
+                <Card style={styles.poolCard}>
+                  <View style={styles.poolHeader}>
+                    <Text style={styles.poolName}>{item.name}</Text>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        submitted ? styles.statusSubmitted : styles.statusPending,
+                      ]}
+                    >
+                      <Text style={styles.statusBadgeText}>
+                        {submitted ? 'Submitted' : 'Pending'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.poolMeta}>
+                    {submitted
+                      ? 'Your predictions are already submitted.'
+                      : 'You still need to complete your predictions.'}
+                  </Text>
+                </Card>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+
+      <Modal
+        visible={showCreateModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowCreateModal(false);
+          setPoolName('');
+        }}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Create New Pool</Text>
+
             <Input
               label="Pool Name"
               value={poolName}
@@ -141,6 +219,7 @@ export default function HomeScreen() {
               placeholder="Mi Quiniela 2026"
               autoFocus
             />
+
             <View style={styles.modalButtons}>
               <Button
                 title="Cancel"
@@ -169,16 +248,126 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.md, paddingBottom: spacing.xxl },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
   banner: {
     backgroundColor: colors.primary,
     marginBottom: spacing.md,
     alignItems: 'center',
     paddingVertical: spacing.xl,
   },
-  bannerTitle: { ...typography.h2, color: '#fff', textAlign: 'center' },
-  bannerSub: { ...typography.body, color: '#c9d4f5', marginTop: spacing.xs },
-  bannerUser: { ...typography.label, color: colors.accent, marginTop: spacing.sm },
+  bannerTitle: {
+    ...typography.h2,
+    color: '#fff',
+    textAlign: 'center',
+  },
+  bannerSub: {
+    ...typography.body,
+    color: '#c9d4f5',
+    marginTop: spacing.xs,
+  },
+  bannerUser: {
+    ...typography.label,
+    color: colors.accent,
+    marginTop: spacing.sm,
+  },
   accessBanner: {
     backgroundColor: colors.accent,
+    marginBottom: spacing.md,
+  },
+  accessTitle: {
+    ...typography.h3,
+    color: colors.background,
+    marginBottom: spacing.xs,
+  },
+  accessText: {
+    ...typography.body,
+    color: colors.background,
+    marginBottom: spacing.md,
+  },
+  accessButton: {
+    marginTop: spacing.xs,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+  },
+  listContent: {
+    gap: spacing.md,
+  },
+  poolCard: {
+    marginBottom: spacing.md,
+  },
+  poolHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  poolName: {
+    ...typography.h3,
+    color: colors.text,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  poolMeta: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+  },
+  statusSubmitted: {
+    backgroundColor: '#D1FAE5',
+  },
+  statusPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  statusBadgeText: {
+    ...typography.caption,
+    color: colors.text,
+  },
+  emptyTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+  },
+});
