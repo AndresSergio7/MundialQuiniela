@@ -41,14 +41,11 @@
     ],
     "scheme": "mundialquiniela",
     "extra": {
-      "supabaseUrl": "https://gelmnydchiiohryyxovv.supabase.co",
-      "supabaseAnonKey": "sb_publishable_61v_3SPzn1t3cWryGbXGGg_mmH61B9k"
-}
       "eas": {
         "projectId": "YOUR_EAS_PROJECT_ID"
       },
-      "supabaseUrl": "YOUR_SUPABASE_URL",
-      "supabaseAnonKey": "YOUR_SUPABASE_ANON_KEY"
+      "supabaseUrl": "https://gelmnydchiiohryyxovv.supabase.co",
+      "supabaseAnonKey": "sb_publishable_61v_3SPzn1t3cWryGbXGGg_mmH61B9k"
     }
   }
 }
