@@ -215,3 +215,28 @@ export async function listMyPools(userId: string): Promise<Pool[]> {
 
   return (data ?? []).map((row: any) => row.pools as Pool);
 }
+
+export async function listMyPools(userId: string): Promise<Pool[]> {
+  const { data, error } = await supabase
+    .from('pool_members')
+    .select(`
+      pool_id,
+      role,
+      pools!inner (
+        id,
+        name,
+        admin_id,
+        invite_token,
+        prediction_deadline,
+        max_members,
+        is_active,
+        created_at,
+        updated_at
+      )
+    `)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => row.pools as Pool);
+}
