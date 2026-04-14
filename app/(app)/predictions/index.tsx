@@ -9,29 +9,39 @@ import { listMatches } from '@/services/matches';
 import { getPredictions, savePrediction, submitPredictions } from '@/services/predictions';
 import type { Match, Prediction } from '@/types';
 
+// Ajusta este import si tu store tiene otra ruta
+import { usePoolStore } from '@/store/poolStore';
+
 const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
 export default function PredictionsScreen() {
   const { user } = useAuth();
+  const { currentPool } = usePoolStore();
+
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, { home: string; away: string }>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
 
+  const poolId = currentPool?.id;
+
   useEffect(() => {
     loadData();
-  }, [user?.id]);
+  }, [user?.id, poolId]);
 
   async function loadData() {
-    if (!user?.id) return;
+    if (!user?.id || !poolId) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
 
       const [matchesData, userPredictions] = await Promise.all([
         listMatches(),
-        getPredictions(user.id),
+        getPredictions(user.id, poolId),
       ]);
 
       setMatches(matchesData);
@@ -43,6 +53,7 @@ export default function PredictionsScreen() {
           away: String(p.away_score),
         };
       });
+
       setPredictions(mapped);
     } catch (error) {
       console.error(error);
@@ -65,7 +76,10 @@ export default function PredictionsScreen() {
   }
 
   async function handleSubmit() {
-    if (!user?.id) return;
+    if (!user?.id || !poolId) {
+      Alert.alert('Error', 'No pool selected.');
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -75,6 +89,7 @@ export default function PredictionsScreen() {
         if (!pred || pred.home === '' || pred.away === '') continue;
 
         await savePrediction({
+          pool_id: poolId,
           user_id: user.id,
           match_id: match.id,
           home_score: Number(pred.home),
@@ -82,7 +97,7 @@ export default function PredictionsScreen() {
         });
       }
 
-      await submitPredictions(user.id);
+      await submitPredictions(poolId, user.id);
       setIsLocked(true);
       Alert.alert('Success', 'Your predictions were submitted.');
     } catch (error) {
@@ -101,6 +116,17 @@ export default function PredictionsScreen() {
       })).filter((item) => item.matches.length > 0),
     [matches]
   );
+
+  if (!poolId) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.container}>
+          <Text style={styles.title}>My Predictions</Text>
+          <Text style={styles.subtitle}>Select a pool first to start predicting.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (loading) {
     return (
