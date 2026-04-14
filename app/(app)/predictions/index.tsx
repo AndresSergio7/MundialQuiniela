@@ -1,284 +1,414 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
-  Alert,
-  TouchableOpacity,
+  SectionList,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
+import { fetchAllMatches } from '@/services/matches';
 import {
-  fetchAllMatches,
   fetchUserPredictions,
-  savePrediction,
+  savePredictionsBulk,
   submitQuiniela,
-  toPredictionMap,
+  getSubmissionStatus,
 } from '@/services/predictions';
-import { getQuinielaStats } from '@/lib/validation';
+import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { MatchRow } from '@/components/MatchRow';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
-import type { Match, Prediction, PredictionMap } from '@/types';
+import type { Match, Submission, PredictionMap, Pool } from '@/types';
 
-const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+type LocalScores = Record<string, { home: string; away: string }>;
 
 export default function PredictionsScreen() {
   const { user } = useAuthStore();
   const { currentPool } = usePoolStore();
 
   const [matches, setMatches] = useState<Match[]>([]);
-  const [predMap, setPredMap] = useState<PredictionMap>({});
+  const [localScores, setLocalScores] = useState<LocalScores>({});
+  const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState('A');
-  const [isLocked, setIsLocked] = useState(false);
+  const [mode, setMode] = useState<'view' | 'edit'>('edit');
+  const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [savedOk, setSavedOk] = useState(false);
 
-  const loadData = useCallback(async () => {
-    if (!user || !currentPool) return;
+  const isDeadlinePassed = currentPool
+    ? new Date(currentPool.prediction_deadline) <= new Date()
+    : false;
+
+  const isLocked = isDeadlinePassed || mode === 'view';
+
+  const loadAll = useCallback(async (pool?: Pool) => {
+    const activePool = pool ?? currentPool;
+    if (!activePool || !user) return;
     setLoading(true);
+    setError(null);
+    setValidationErrors([]);
+    setSavedOk(false);
 
-    const [allMatches, userPredictions] = await Promise.all([
+    const [allMatches, predictions, sub] = await Promise.all([
       fetchAllMatches(),
-      fetchUserPredictions(currentPool.id, user.id),
+      fetchUserPredictions(activePool.id, user.id),
+      getSubmissionStatus(activePool.id, user.id),
     ]);
 
     setMatches(allMatches);
-    setPredMap(toPredictionMap(userPredictions));
+    setSubmission(sub);
 
-    const deadline = new Date(currentPool.prediction_deadline);
-    setIsLocked(deadline <= new Date());
+    const scores: LocalScores = {};
+    for (const m of allMatches) {
+      scores[m.id] = { home: '', away: '' };
+    }
+    for (const p of predictions) {
+      scores[p.match_id] = {
+        home: String(p.home_score),
+        away: String(p.away_score),
+      };
+    }
+    setLocalScores(scores);
+
+    // Start in view mode only if already validly submitted and before deadline
+    const deadlinePast = new Date(activePool.prediction_deadline) <= new Date();
+    if (sub?.is_valid && !deadlinePast) {
+      setMode('view');
+    } else {
+      setMode('edit');
+    }
 
     setLoading(false);
-  }, [user, currentPool]);
+  }, [currentPool, user]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadAll();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPool?.id]);
 
-  async function handleScoreChange(
-    matchId: string,
-    side: 'home' | 'away',
-    val: string
-  ) {
-    if (isLocked || !user || !currentPool) return;
-    const num = parseInt(val, 10);
-    if (isNaN(num) || num < 0 || num > 20) return;
-
-    const current = predMap[matchId] ?? { home: 0, away: 0 };
-    const updated = {
-      ...current,
-      [side]: num,
-    };
-
-    setPredMap((prev) => ({ ...prev, [matchId]: updated }));
-
-    // Auto-save on change (debounced in production)
-    await savePrediction(
-      currentPool.id,
-      user.id,
-      matchId,
-      updated.home,
-      updated.away
-    );
+  function handleScoreChange(matchId: string, side: 'home' | 'away', val: string) {
+    const cleaned = val.replace(/[^0-9]/g, '').slice(0, 2);
+    setLocalScores((prev) => ({
+      ...prev,
+      [matchId]: { ...prev[matchId], [side]: cleaned },
+    }));
+    setError(null);
+    setValidationErrors([]);
+    setSavedOk(false);
   }
 
-  async function handleSubmit() {
-    if (!user || !currentPool) return;
-    setSubmitting(true);
+  const filledCount = useMemo(
+    () => Object.values(localScores).filter((s) => s.home !== '' && s.away !== '').length,
+    [localScores]
+  );
 
-    const { success, errors } = await submitQuiniela(currentPool.id, user.id);
+  const allFilled = matches.length > 0 && filledCount === matches.length;
 
-    setSubmitting(false);
+  function buildPredictionMap(): PredictionMap {
+    const map: PredictionMap = {};
+    for (const [matchId, score] of Object.entries(localScores)) {
+      if (score.home !== '' && score.away !== '') {
+        map[matchId] = {
+          home: parseInt(score.home, 10),
+          away: parseInt(score.away, 10),
+        };
+      }
+    }
+    return map;
+  }
 
-    if (success) {
-      Alert.alert('Quiniela Submitted!', 'Your predictions have been saved and validated.');
+  async function handleSaveAll() {
+    if (!currentPool || !user) return;
+    setError(null);
+    setValidationErrors([]);
+    setSavedOk(false);
+
+    if (!allFilled) {
+      setError(
+        `Fill in all ${matches.length} matches first. ${matches.length - filledCount} still empty.`
+      );
+      return;
+    }
+
+    setSaving(true);
+    const result = await savePredictionsBulk(currentPool.id, user.id, buildPredictionMap());
+    setSaving(false);
+
+    if (!result.success) {
+      setError(result.error ?? 'Failed to save. Try again.');
     } else {
-      Alert.alert('Validation Failed', errors.join('\n\n'));
+      setSavedOk(true);
     }
   }
 
-  const groupMatches = matches.filter((m) => m.group_name === selectedGroup);
-  const stats = getQuinielaStats(predMap);
-  const deadline = currentPool ? new Date(currentPool.prediction_deadline) : null;
-  const deadlinePassed = deadline ? deadline <= new Date() : false;
+  async function handleSubmit() {
+    if (!currentPool || !user) return;
+    setError(null);
+    setValidationErrors([]);
+    setSavedOk(false);
+
+    if (!allFilled) {
+      setError(
+        `Fill in all ${matches.length} matches first. ${matches.length - filledCount} still empty.`
+      );
+      return;
+    }
+
+    setSubmitting(true);
+
+    const saveResult = await savePredictionsBulk(currentPool.id, user.id, buildPredictionMap());
+    if (!saveResult.success) {
+      setSubmitting(false);
+      setError(saveResult.error ?? 'Failed to save predictions.');
+      return;
+    }
+
+    const submitResult = await submitQuiniela(currentPool.id, user.id);
+    setSubmitting(false);
+
+    if (submitResult.success) {
+      const sub = await getSubmissionStatus(currentPool.id, user.id);
+      setSubmission(sub);
+      setMode('view');
+    } else {
+      setValidationErrors(submitResult.errors);
+      setError('Your quiniela has validation errors (see below). Fix and resubmit.');
+    }
+  }
+
+  function handleModify() {
+    setMode('edit');
+    setError(null);
+    setValidationErrors([]);
+    setSavedOk(false);
+  }
+
+  const groupedMatches = useMemo(() => {
+    const groups: Record<string, Match[]> = {};
+    for (const m of matches) {
+      if (!groups[m.group_name]) groups[m.group_name] = [];
+      groups[m.group_name].push(m);
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([title, data]) => ({ title: `Group ${title}`, data }));
+  }, [matches]);
 
   if (!currentPool) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.noPool}>Select a pool from Home to view predictions.</Text>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.noPool}>Select a pool from Home to enter predictions.</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      {/* Pool Info */}
-      <View style={styles.poolBar}>
-        <Text style={styles.poolName} numberOfLines={1}>{currentPool.name}</Text>
-        {isLocked && (
-          <View style={styles.lockedBadge}>
-            <Text style={styles.lockedText}>LOCKED</Text>
-          </View>
-        )}
-      </View>
+      <PoolSelectorBar onPoolChange={(pool) => loadAll(pool)} />
 
-      {/* Stats Bar */}
-      <Card style={styles.statsBar}>
-        <StatItem label="Predicted" value={`${stats.predicted}/72`} ok={stats.predicted === 72} />
-        <StatItem label="Distinct" value={`${stats.distinct}/7`} ok={stats.distinct >= 7} />
-        <StatItem label="Repeated" value={`${stats.repeated}/5`} ok={stats.repeated >= 5} />
-        <StatItem label="Draws" value={`${stats.draws}/5`} ok={stats.draws >= 5} />
-      </Card>
-
-      {/* Deadline */}
-      {deadline && (
-        <Text style={[styles.deadline, deadlinePassed && styles.deadlinePassed]}>
-          {deadlinePassed
-            ? 'Predictions locked'
-            : `Deadline: ${deadline.toLocaleDateString()}`}
-        </Text>
-      )}
-
-      {/* Group Selector */}
-      <FlatList
-        horizontal
-        data={GROUPS}
-        keyExtractor={(g) => g}
-        showsHorizontalScrollIndicator={false}
-        style={styles.groupList}
-        contentContainerStyle={styles.groupListContent}
-        renderItem={({ item: group }) => (
-          <TouchableOpacity
-            style={[styles.groupTab, selectedGroup === group && styles.groupTabActive]}
-            onPress={() => setSelectedGroup(group)}
-          >
-            <Text style={[styles.groupTabText, selectedGroup === group && styles.groupTabTextActive]}>
-              {group}
-            </Text>
-          </TouchableOpacity>
-        )}
-      />
-
-      {/* Matches */}
-      <FlatList
-        data={groupMatches}
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={styles.matchList}
-        renderItem={({ item: match }) => {
-          const pred = predMap[match.id];
-          return (
+      {loading ? (
+        <ActivityIndicator
+          size="large"
+          color={colors.primary}
+          style={{ marginTop: spacing.xxl }}
+        />
+      ) : (
+        <SectionList
+          sections={groupedMatches}
+          keyExtractor={(m) => m.id}
+          stickySectionHeadersEnabled
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={() => loadAll()} />
+          }
+          renderSectionHeader={({ section: { title } }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{title}</Text>
+            </View>
+          )}
+          renderItem={({ item: match }) => (
             <MatchRow
               match={match}
-              homeScore={pred ? String(pred.home) : ''}
-              awayScore={pred ? String(pred.away) : ''}
-              locked={isLocked || match.status !== 'scheduled'}
-              onHomeChange={(val) => handleScoreChange(match.id, 'home', val)}
-              onAwayChange={(val) => handleScoreChange(match.id, 'away', val)}
-              pointsEarned={
-                match.status === 'finished'
-                  ? undefined // pulled from predictions table in real use
-                  : undefined
-              }
+              homeScore={localScores[match.id]?.home ?? ''}
+              awayScore={localScores[match.id]?.away ?? ''}
+              locked={isLocked}
+              onHomeChange={(v) => handleScoreChange(match.id, 'home', v)}
+              onAwayChange={(v) => handleScoreChange(match.id, 'away', v)}
             />
-          );
-        }}
-        ListFooterComponent={
-          !isLocked ? (
-            <Button
-              title="Submit Quiniela"
-              onPress={handleSubmit}
-              loading={submitting}
-              style={{ marginTop: spacing.md }}
-            />
-          ) : null
-        }
-      />
+          )}
+          ListHeaderComponent={
+            <View>
+              <View style={styles.statusBar}>
+                {mode === 'view' && submission?.is_valid ? (
+                  <View style={styles.submittedBadge}>
+                    <Text style={styles.submittedBadgeText}>Submitted</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.progressText}>
+                    {filledCount} / {matches.length} filled
+                  </Text>
+                )}
+                {isDeadlinePassed && (
+                  <Text style={styles.deadlineLabel}>Deadline passed</Text>
+                )}
+              </View>
+
+              {error && (
+                <View style={styles.errorBanner}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              {validationErrors.length > 0 && (
+                <View style={styles.errorBanner}>
+                  {validationErrors.map((e, i) => (
+                    <Text key={i} style={styles.errorText}>• {e}</Text>
+                  ))}
+                </View>
+              )}
+
+              {savedOk && mode === 'edit' && (
+                <View style={styles.successBanner}>
+                  <Text style={styles.successText}>Saved successfully!</Text>
+                </View>
+              )}
+            </View>
+          }
+          ListFooterComponent={
+            <View style={styles.footer}>
+              {isDeadlinePassed ? (
+                <Text style={styles.deadlinePassed}>
+                  The prediction deadline has passed. No more changes allowed.
+                </Text>
+              ) : mode === 'view' ? (
+                <Card style={styles.submittedCard}>
+                  <Text style={styles.submittedCardTitle}>Quiniela Submitted!</Text>
+                  <Text style={styles.submittedCardSub}>
+                    You can still modify your predictions until the deadline.
+                  </Text>
+                  <Button
+                    title="Modify Predictions"
+                    variant="outline"
+                    onPress={handleModify}
+                    style={{ marginTop: spacing.md }}
+                  />
+                </Card>
+              ) : (
+                <>
+                  <Button
+                    title={saving ? 'Saving...' : 'Save All Predictions'}
+                    variant="outline"
+                    onPress={handleSaveAll}
+                    loading={saving}
+                    disabled={!allFilled || saving || submitting}
+                    style={{ marginBottom: spacing.sm }}
+                  />
+                  <Button
+                    title={submitting ? 'Submitting...' : 'Submit Quiniela'}
+                    onPress={handleSubmit}
+                    loading={submitting}
+                    disabled={!allFilled || saving || submitting}
+                  />
+                  {!allFilled && (
+                    <Text style={styles.hint}>
+                      {matches.length - filledCount} match{matches.length - filledCount !== 1 ? 'es' : ''} still need scores
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
-
-function StatItem({ label, value, ok }: { label: string; value: string; ok: boolean }) {
-  return (
-    <View style={statStyles.item}>
-      <Text style={[statStyles.value, ok ? statStyles.ok : statStyles.warn]}>{value}</Text>
-      <Text style={statStyles.label}>{label}</Text>
-    </View>
-  );
-}
-
-const statStyles = StyleSheet.create({
-  item: { alignItems: 'center' },
-  value: { ...typography.label, fontWeight: '700' },
-  label: { ...typography.caption, color: colors.textMuted },
-  ok: { color: colors.success },
-  warn: { color: colors.error },
-});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  noPool: { ...typography.body, color: colors.textMuted },
-  poolBar: {
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  noPool: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+  list: { padding: spacing.md, paddingBottom: spacing.xxl },
+  sectionHeader: {
+    backgroundColor: colors.background,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  sectionTitle: {
+    ...typography.label,
+    color: colors.primary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
   },
-  poolName: { ...typography.label, color: '#fff', flex: 1, fontWeight: '700' },
-  lockedBadge: {
-    backgroundColor: colors.error,
+  progressText: { ...typography.label, color: colors.textMuted },
+  deadlineLabel: { ...typography.caption, color: colors.error, fontWeight: '600' },
+  submittedBadge: {
+    backgroundColor: '#d1fae5',
     paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
   },
-  lockedText: { ...typography.caption, color: '#fff', fontWeight: '700' },
-  statsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    margin: spacing.md,
-    marginBottom: 0,
-    paddingVertical: spacing.sm,
+  submittedBadgeText: { ...typography.caption, color: colors.success, fontWeight: '700' },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  deadline: {
+  errorText: { ...typography.caption, color: colors.error },
+  successBanner: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  successText: { ...typography.caption, color: colors.success, fontWeight: '600' },
+  footer: { marginTop: spacing.lg, paddingBottom: spacing.xxl },
+  deadlinePassed: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
+  },
+  submittedCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 2,
+    borderColor: colors.success,
+  },
+  submittedCardTitle: { ...typography.h3, color: colors.success },
+  submittedCardSub: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  hint: {
     ...typography.caption,
     color: colors.textMuted,
     textAlign: 'center',
-    marginVertical: spacing.xs,
-  },
-  deadlinePassed: { color: colors.error },
-  groupList: { maxHeight: 48 },
-  groupListContent: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    gap: spacing.xs,
-  },
-  groupTab: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groupTabActive: { backgroundColor: colors.primary },
-  groupTabText: { ...typography.label, color: colors.textMuted, fontWeight: '700' },
-  groupTabTextActive: { color: '#fff' },
-  matchList: {
-    padding: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xxl,
+    marginTop: spacing.sm,
   },
 });

@@ -10,12 +10,13 @@ import {
 } from 'react-native';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
-import { getStandings } from '@/services/standings';
+import { getStandingsWithAllMembers } from '@/services/standings';
 import { syncResults } from '@/lib/api';
+import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { StandingRow } from '@/components/StandingRow';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography } from '@/components/ui/theme';
-import type { Standing } from '@/types';
+import type { Standing, Pool } from '@/types';
 
 export default function StandingsScreen() {
   const { user } = useAuthStore();
@@ -24,10 +25,11 @@ export default function StandingsScreen() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  async function loadStandings() {
-    if (!currentPool) return;
+  async function loadStandings(pool?: Pool) {
+    const activePool = pool ?? currentPool;
+    if (!activePool) return;
     setLoading(true);
-    const data = await getStandings(currentPool.id);
+    const data = await getStandingsWithAllMembers(activePool.id);
     setStandings(data);
     setLoading(false);
   }
@@ -42,7 +44,8 @@ export default function StandingsScreen() {
 
   useEffect(() => {
     loadStandings();
-  }, [currentPool]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPool?.id]);
 
   if (!currentPool) {
     return (
@@ -56,9 +59,13 @@ export default function StandingsScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* Pool header */}
-      <View style={styles.poolBar}>
-        <Text style={styles.poolName} numberOfLines={1}>{currentPool.name}</Text>
+      <PoolSelectorBar onPoolChange={(pool) => loadStandings(pool)} />
+
+      {/* Sync button row */}
+      <View style={styles.actionRow}>
+        <Text style={styles.participantsLabel}>
+          {standings.length} participant{standings.length !== 1 ? 's' : ''}
+        </Text>
         <TouchableOpacity onPress={handleSync} disabled={syncing}>
           <Text style={styles.syncBtn}>{syncing ? 'Syncing...' : 'Sync Results'}</Text>
         </TouchableOpacity>
@@ -69,7 +76,9 @@ export default function StandingsScreen() {
         <Card style={styles.myCard}>
           <Text style={styles.myCardLabel}>My Position</Text>
           <View style={styles.myCardRow}>
-            <Text style={styles.myRank}>#{userStanding.rank ?? '-'}</Text>
+            <Text style={styles.myRank}>
+              {userStanding.rank != null ? `#${userStanding.rank}` : '-'}
+            </Text>
             <View style={styles.myStats}>
               <Text style={styles.myPoints}>{userStanding.total_points} pts</Text>
               <Text style={styles.myMeta}>
@@ -91,12 +100,7 @@ export default function StandingsScreen() {
           data={standings}
           keyExtractor={(s) => s.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={loadStandings} />}
-          ListHeaderComponent={
-            <Text style={styles.sectionTitle}>
-              {standings.length} Participants
-            </Text>
-          }
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadStandings()} />}
           renderItem={({ item }) => (
             <StandingRow
               standing={item}
@@ -105,9 +109,9 @@ export default function StandingsScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No standings yet.</Text>
+              <Text style={styles.emptyText}>No participants yet.</Text>
               <Text style={styles.emptySubText}>
-                Standings appear once matches are played.
+                Members will appear here once they submit predictions.
               </Text>
             </View>
           }
@@ -121,16 +125,18 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   noPool: { ...typography.body, color: colors.textMuted },
-  poolBar: {
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  poolName: { ...typography.label, color: '#fff', fontWeight: '700', flex: 1 },
-  syncBtn: { ...typography.caption, color: colors.accent, fontWeight: '600' },
+  participantsLabel: { ...typography.caption, color: colors.textMuted },
+  syncBtn: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   myCard: {
     margin: spacing.md,
     marginBottom: 0,
@@ -143,12 +149,12 @@ const styles = StyleSheet.create({
   myPoints: { ...typography.h3, color: '#fff', fontWeight: '700' },
   myMeta: { ...typography.caption, color: '#c9d4f5', marginTop: 2 },
   list: { padding: spacing.md, paddingBottom: spacing.xxl },
-  sectionTitle: {
-    ...typography.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-  },
   empty: { alignItems: 'center', paddingVertical: spacing.xxl },
   emptyText: { ...typography.h3, color: colors.text },
-  emptySubText: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
+  emptySubText: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
 });

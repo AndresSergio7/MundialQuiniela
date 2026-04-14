@@ -4,23 +4,13 @@
 
 import { supabase } from '@/lib/supabase';
 import { validateQuiniela, validateSinglePrediction } from '@/lib/validation';
+import { fetchAllMatches } from '@/services/matches';
 import type {
   Prediction,
   PredictionMap,
   Submission,
-  Match,
   ValidationResult,
 } from '@/types';
-
-// ---- fetchMatches ----
-export async function fetchAllMatches(): Promise<Match[]> {
-  const { data } = await supabase
-    .from('matches')
-    .select('*')
-    .order('match_number', { ascending: true });
-
-  return (data ?? []) as Match[];
-}
 
 // ---- fetchUserPredictions ----
 export async function fetchUserPredictions(
@@ -45,19 +35,17 @@ export async function savePrediction(
   homeScore: number,
   awayScore: number
 ): Promise<{ success: boolean; error: string | null }> {
-  // Validate deadline
   const { data: pool } = await supabase
     .from('pools')
     .select('prediction_deadline')
     .eq('id', poolId)
-    .single();
+    .maybeSingle();
 
   if (!pool) return { success: false, error: 'Pool not found.' };
   if (new Date(pool.prediction_deadline) <= new Date()) {
     return { success: false, error: 'Prediction deadline has passed.' };
   }
 
-  // Validate score format
   const validErr = validateSinglePrediction(homeScore, awayScore);
   if (validErr) return { success: false, error: validErr };
 
@@ -86,7 +74,7 @@ export async function savePredictionsBulk(
     .from('pools')
     .select('prediction_deadline')
     .eq('id', poolId)
-    .single();
+    .maybeSingle();
 
   if (!pool) return { success: false, error: 'Pool not found.' };
   if (new Date(pool.prediction_deadline) <= new Date()) {
@@ -114,21 +102,17 @@ export async function submitQuiniela(
   poolId: string,
   userId: string
 ): Promise<{ success: boolean; errors: string[] }> {
-  // Fetch all matches
   const matches = await fetchAllMatches();
   const matchIds = matches.map((m) => m.id);
 
-  // Fetch current predictions
   const predictions = await fetchUserPredictions(poolId, userId);
   const predMap: PredictionMap = {};
   for (const p of predictions) {
     predMap[p.match_id] = { home: p.home_score, away: p.away_score };
   }
 
-  // Validate
   const validation: ValidationResult = validateQuiniela(predMap, matchIds);
 
-  // Upsert submission record
   await supabase.from('submissions').upsert(
     {
       pool_id: poolId,
@@ -140,11 +124,24 @@ export async function submitQuiniela(
     { onConflict: 'pool_id,user_id' }
   );
 
+  // Ensure user appears in standings immediately (0 pts placeholder)
+  await supabase.from('standings').upsert(
+    {
+      pool_id: poolId,
+      user_id: userId,
+      total_points: 0,
+      exact_scores: 0,
+      correct_results: 0,
+      matches_played: 0,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'pool_id,user_id' }
+  );
+
   return { success: validation.valid, errors: validation.errors };
 }
 
 // ---- lockPredictions ----
-// Called after deadline — locks all predictions in a pool
 export async function lockPredictions(poolId: string): Promise<void> {
   await supabase
     .from('predictions')
@@ -167,9 +164,9 @@ export async function getSubmissionStatus(
     .select('*')
     .eq('pool_id', poolId)
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
-  return data as Submission | null;
+  return (data as Submission | null) ?? null;
 }
 
 // ---- toPredictionMap ----
@@ -179,3 +176,6 @@ export function toPredictionMap(predictions: Prediction[]): PredictionMap {
     return acc;
   }, {});
 }
+
+// Re-export for backwards compatibility
+export { fetchAllMatches };
