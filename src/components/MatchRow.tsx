@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  TouchableOpacity,
 } from 'react-native';
 import { colors, spacing, radius, typography } from './ui/theme';
 import type { Match } from '@/types';
@@ -19,6 +18,71 @@ interface MatchRowProps {
   pointsEarned?: number;
 }
 
+const FLAG_MAP: Record<string, string> = {
+  MEX: '🇲🇽',
+  CRC: '🇨🇷',
+  ZAF: '🇿🇦',
+  CAN: '🇨🇦',
+  BIH: '🇧🇦',
+  QAT: '🇶🇦',
+  SUI: '🇨🇭',
+  BRA: '🇧🇷',
+  MAR: '🇲🇦',
+  HTI: '🇭🇹',
+  SCO: '🏴',
+  USA: '🇺🇸',
+  URU: '🇺🇾',
+  ESP: '🇪🇸',
+  POR: '🇵🇹',
+  ARG: '🇦🇷',
+  POL: '🇵🇱',
+  FRA: '🇫🇷',
+  BEL: '🇧🇪',
+  AUS: '🇦🇺',
+  KOR: '🇰🇷',
+  GER: '🇩🇪',
+  JPN: '🇯🇵',
+  NED: '🇳🇱',
+  SEN: '🇸🇳',
+  ENG: '🏴',
+  IRN: '🇮🇷',
+  ECU: '🇪🇨',
+  COL: '🇨🇴',
+  ITA: '🇮🇹',
+  PER: '🇵🇪',
+  CRO: '🇭🇷',
+  CIV: '🇨🇮',
+  DEN: '🇩🇰',
+  SRB: '🇷🇸',
+  CMR: '🇨🇲',
+  CHI: '🇨🇱',
+  GHA: '🇬🇭',
+  ALG: '🇩🇿',
+  TUR: '🇹🇷',
+  EGY: '🇪🇬',
+  VEN: '🇻🇪',
+  PAR: '🇵🇾',
+  RSA: '🇿🇦',
+  NZL: '🇳🇿',
+  UKR: '🇺🇦',
+  COD: '🇨🇩',
+};
+
+function getFlag(code: string) {
+  return FLAG_MAP[code] ?? '🏳️';
+}
+
+function formatMatchDate(dateString: string) {
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export function MatchRow({
   match,
   homeScore,
@@ -28,24 +92,17 @@ export function MatchRow({
   onAwayChange,
   pointsEarned,
 }: MatchRowProps) {
-  const matchDate = new Date(match.match_date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-
   return (
     <View style={styles.container}>
-      <View style={styles.meta}>
-        <Text style={styles.group}>Group {match.group_name}</Text>
-        <Text style={styles.date}>{matchDate}</Text>
-      </View>
+      <View style={styles.mainRow}>
+        <View style={styles.teamBlockLeft}>
+          <Text style={styles.teamName} numberOfLines={1}>
+            {match.home_team}
+          </Text>
+          <Text style={styles.flag}>{getFlag(match.home_team_code)}</Text>
+        </View>
 
-      <View style={styles.row}>
-        <Text style={styles.teamHome} numberOfLines={1}>
-          {match.home_team_code}
-        </Text>
-
-        <View style={styles.scoreContainer}>
+        <View style={styles.centerBlock}>
           <TextInput
             style={[styles.scoreInput, locked && styles.locked]}
             value={homeScore}
@@ -57,7 +114,7 @@ export function MatchRow({
             placeholder="-"
             placeholderTextColor={colors.textMuted}
           />
-          <Text style={styles.separator}>:</Text>
+          <Text style={styles.separator}>-</Text>
           <TextInput
             style={[styles.scoreInput, locked && styles.locked]}
             value={awayScore}
@@ -71,16 +128,21 @@ export function MatchRow({
           />
         </View>
 
-        <Text style={styles.teamAway} numberOfLines={1}>
-          {match.away_team_code}
-        </Text>
-
-        {pointsEarned !== undefined && (
-          <View style={[styles.pointsBadge, getPointsStyle(pointsEarned)]}>
-            <Text style={styles.pointsText}>{pointsEarned}</Text>
-          </View>
-        )}
+        <View style={styles.teamBlockRight}>
+          <Text style={styles.flag}>{getFlag(match.away_team_code)}</Text>
+          <Text style={styles.teamNameRight} numberOfLines={1}>
+            {match.away_team}
+          </Text>
+        </View>
       </View>
+
+      <Text style={styles.dateText}>{formatMatchDate(match.match_date)}</Text>
+
+      {pointsEarned !== undefined && (
+        <View style={[styles.pointsBadge, getPointsStyle(pointsEarned)]}>
+          <Text style={styles.pointsText}>{pointsEarned} pts</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -95,74 +157,97 @@ function getPointsStyle(pts: number) {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E5E7EB',
   },
-  meta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  group: { ...typography.caption, color: colors.textMuted },
-  date: { ...typography.caption, color: colors.textMuted },
-  row: {
+  mainRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  teamHome: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
+  teamBlockLeft: {
     flex: 1,
-    textAlign: 'left',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    minWidth: 0,
+    paddingRight: 8,
   },
-  teamAway: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
+  teamBlockRight: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    minWidth: 0,
+    paddingLeft: 8,
+  },
+  teamName: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+    marginRight: 6,
+    flexShrink: 1,
     textAlign: 'right',
   },
-  scoreContainer: {
+  teamNameRight: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+    marginLeft: 6,
+    flexShrink: 1,
+    textAlign: 'left',
+  },
+  flag: {
+    fontSize: 16,
+  },
+  centerBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: spacing.sm,
+    justifyContent: 'center',
   },
   scoreInput: {
-    width: 40,
-    height: 40,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
+    width: 30,
+    height: 30,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
     textAlign: 'center',
-    ...typography.h3,
     color: colors.text,
-    backgroundColor: colors.background,
+    backgroundColor: '#F9FAFB',
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 0,
   },
   locked: {
-    backgroundColor: colors.border,
+    backgroundColor: '#E5E7EB',
     color: colors.textMuted,
   },
   separator: {
-    ...typography.h3,
+    marginHorizontal: 6,
     color: colors.textMuted,
-    marginHorizontal: spacing.xs,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dateText: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 11,
+    color: colors.textMuted,
   },
   pointsBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: spacing.sm,
+    alignSelf: 'center',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   pointsText: {
-    ...typography.caption,
+    fontSize: 11,
     fontWeight: '700',
-    color: colors.text,
+    color: '#fff',
   },
 });
