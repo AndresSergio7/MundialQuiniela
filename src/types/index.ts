@@ -1,0 +1,237 @@
+// ============================================================
+// MUNDIAL QUINIELA - TypeScript Types
+// ============================================================
+
+// ---- Auth ----
+export interface AuthUser {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
+// ---- Profile ----
+export interface Profile {
+  id: string;
+  username: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---- Pool ----
+export interface Pool {
+  id: string;
+  name: string;
+  admin_id: string;
+  invite_token: string;
+  prediction_deadline: string;
+  max_members: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PoolWithMeta extends Pool {
+  member_count: number;
+  user_role: 'admin' | 'member';
+  has_submitted: boolean;
+}
+
+// ---- Pool Member ----
+export type MemberRole = 'admin' | 'member';
+
+export interface PoolMember {
+  id: string;
+  pool_id: string;
+  user_id: string;
+  role: MemberRole;
+  joined_at: string;
+  profile?: Profile;
+}
+
+// ---- Invite ----
+export interface Invite {
+  id: string;
+  pool_id: string;
+  token: string;
+  created_by: string;
+  used_by: string | null;
+  used_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+// ---- Match ----
+export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'postponed';
+
+export interface Match {
+  id: string;
+  match_number: number;
+  group_name: string;
+  home_team: string;
+  away_team: string;
+  home_team_code: string;
+  away_team_code: string;
+  match_date: string;
+  venue: string;
+  city: string;
+  home_score: number | null;
+  away_score: number | null;
+  status: MatchStatus;
+  external_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---- Prediction ----
+export interface Prediction {
+  id: string;
+  pool_id: string;
+  user_id: string;
+  match_id: string;
+  home_score: number;
+  away_score: number;
+  points_earned: number;
+  is_locked: boolean;
+  created_at: string;
+  updated_at: string;
+  match?: Match;
+}
+
+export type PredictionMap = Record<string, { home: number; away: number }>;
+
+// ---- Submission ----
+export interface Submission {
+  id: string;
+  pool_id: string;
+  user_id: string;
+  submitted_at: string;
+  is_valid: boolean;
+  validation_errors: string[];
+  locked_at: string | null;
+}
+
+// ---- Standings ----
+export interface Standing {
+  id: string;
+  pool_id: string;
+  user_id: string;
+  total_points: number;
+  exact_scores: number;
+  correct_results: number;
+  matches_played: number;
+  rank: number | null;
+  updated_at: string;
+  profile?: Profile;
+}
+
+// ---- Payment ----
+export type PaymentPlatform = 'ios' | 'android' | 'web';
+export type PaymentStatus = 'pending' | 'verified' | 'failed' | 'refunded';
+export type PaymentType = 'app_access' | 'extra_slots';
+
+export interface Payment {
+  id: string;
+  user_id: string;
+  pool_id: string | null;
+  amount_cents: number;
+  currency: string;
+  platform: PaymentPlatform;
+  product_id: string;
+  transaction_id: string;
+  receipt_data: string | null;
+  status: PaymentStatus;
+  payment_type: PaymentType;
+  slots_purchased: number;
+  created_at: string;
+  verified_at: string | null;
+}
+
+// ---- Entitlement ----
+export interface Entitlement {
+  id: string;
+  user_id: string;
+  pool_id: string | null;
+  has_app_access: boolean;
+  base_slots: number;
+  extra_slots: number;
+  total_slots: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---- Scoring ----
+export type ScorePoints = 0 | 1 | 3 | 4 | 6;
+
+export interface ScoreResult {
+  match_id: string;
+  points: ScorePoints;
+  reason: string;
+}
+
+// ---- Validation ----
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export interface ValidationRule {
+  name: string;
+  check: (predictions: PredictionMap) => boolean;
+  error: string;
+}
+
+// ---- Scoreline ----
+export interface Scoreline {
+  home: number;
+  away: number;
+  count: number;
+  key: string;
+}
+
+// ---- Product IDs ----
+export const PRODUCT_IDS = {
+  APP_ACCESS: {
+    ios: 'com.mundialquiniela.app.access',
+    android: 'com.mundialquiniela.app.access',
+  },
+  EXTRA_SLOTS: {
+    ios: 'com.mundialquiniela.extra.slots',
+    android: 'com.mundialquiniela.extra.slots',
+  },
+} as const;
+
+export const PRICES = {
+  APP_ACCESS_CENTS: 500,     // $5
+  EXTRA_SLOTS_CENTS: 500,    // $5 per user
+  BASE_SLOTS: 10,
+  EXTRA_SLOTS_BUNDLE: 1,
+} as const;
+
+// ---- API ----
+export interface ExternalMatchResult {
+  external_id: string;
+  home_score: number;
+  away_score: number;
+  status: MatchStatus;
+}
+
+// ---- Store ----
+export interface AuthState {
+  user: AuthUser | null;
+  profile: Profile | null;
+  entitlement: Entitlement | null;
+  isLoading: boolean;
+  setUser: (user: AuthUser | null) => void;
+  setProfile: (profile: Profile | null) => void;
+  setEntitlement: (entitlement: Entitlement | null) => void;
+  signOut: () => void;
+}
+
+export interface PoolState {
+  currentPool: Pool | null;
+  pools: Pool[];
+  setCurrentPool: (pool: Pool | null) => void;
+  setPools: (pools: Pool[]) => void;
+}
