@@ -9,29 +9,27 @@ import { listMatches } from '@/services/matches';
 import { getPredictions, savePrediction, submitPredictions } from '@/services/predictions';
 import type { Match, Prediction } from '@/types';
 
-// Ajusta este import si tu store tiene otra ruta
-import { usePoolStore } from '@/store/poolStore';
-
 const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+
+// TEMPORAL: cambia esto por el pool real luego
+const TEMP_POOL_ID = 'REPLACE_WITH_REAL_POOL_ID';
 
 export default function PredictionsScreen() {
   const { user } = useAuth();
-  const { currentPool } = usePoolStore();
-
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, { home: string; away: string }>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
 
-  const poolId = currentPool?.id;
+  const poolId = TEMP_POOL_ID;
 
   useEffect(() => {
     loadData();
   }, [user?.id, poolId]);
 
   async function loadData() {
-    if (!user?.id || !poolId) {
+    if (!user?.id || !poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
       setLoading(false);
       return;
     }
@@ -76,8 +74,8 @@ export default function PredictionsScreen() {
   }
 
   async function handleSubmit() {
-    if (!user?.id || !poolId) {
-      Alert.alert('Error', 'No pool selected.');
+    if (!user?.id || !poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
+      Alert.alert('Error', 'Set a real pool id first.');
       return;
     }
 
@@ -117,12 +115,12 @@ export default function PredictionsScreen() {
     [matches]
   );
 
-  if (!poolId) {
+  if (!poolId || poolId === 'REPLACE_WITH_REAL_POOL_ID') {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.container}>
           <Text style={styles.title}>My Predictions</Text>
-          <Text style={styles.subtitle}>Select a pool first to start predicting.</Text>
+          <Text style={styles.subtitle}>Add a real pool id in the screen file first.</Text>
         </View>
       </SafeAreaView>
     );
