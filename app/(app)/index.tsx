@@ -2,9 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
-  Alert,
   Modal,
   ScrollView,
   TouchableOpacity,
@@ -29,72 +27,59 @@ export default function HomeScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [poolName, setPoolName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
 
-  useEffect(() => {
-    fetchPools();
-  }, []);
+  useEffect(() => { fetchPools(); }, []);
 
   useEffect(() => {
-    const loadSubmissions = async () => {
-      if (!user || !pools.length) return;
+    if (!user || !pools.length) return;
+    const loadSubs = async () => {
       const map: Record<string, Submission | null> = {};
-
       for (const pool of pools) {
         map[pool.id] = await getSubmissionStatus(pool.id, user.id);
       }
-
       setSubmissions(map);
     };
-
-    loadSubmissions();
+    loadSubs();
   }, [pools, user]);
 
-  async function handleCreatePool() {
-    const trimmedName = poolName.trim();
-
-    if (!trimmedName) {
-      Alert.alert('Pool name required', 'Please enter a name for your pool.');
-      return;
-    }
-
-    if (!user) {
-      Alert.alert('Sign in required', 'Please sign in again to create a pool.');
-      return;
-    }
-
+  function openCreateModal() {
     if (!entitlement?.has_app_access) {
-      Alert.alert('Purchase Required', 'Buy app access to create a pool.', [
-        { text: 'Cancel' },
-        { text: 'Purchase', onPress: () => router.push('/(app)/purchase') },
-      ]);
+      router.push('/(app)/purchase');
       return;
     }
+    setCreateError('');
+    setPoolName('');
+    setShowCreateModal(true);
+  }
 
+  async function handleCreatePool() {
+    if (!poolName.trim() || !user) return;
+    setCreateError('');
     setCreating(true);
 
-    try {
-      const { pool, error } = await createPool(user.id, trimmedName);
+    const { pool, error } = await createPool(user.id, poolName.trim());
+    setCreating(false);
 
-      if (error) {
-        Alert.alert('Error', error);
-        return;
-      }
-
+    if (error === 'PURCHASE_REQUIRED') {
       setShowCreateModal(false);
-      setPoolName('');
-      await fetchPools();
+      router.push('/(app)/purchase');
+      return;
+    }
 
-      if (pool) {
-        setCurrentPool(pool);
-        router.push('/(app)/predictions');
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to create pool.';
-      Alert.alert('Error', message);
-    } finally {
-      setCreating(false);
+    if (error) {
+      setCreateError(error);
+      return;
+    }
+
+    setShowCreateModal(false);
+    setPoolName('');
+    await fetchPools();
+
+    if (pool) {
+      setCurrentPool(pool);
+      router.push('/(app)/predictions');
     }
   }
 
@@ -104,11 +89,8 @@ export default function HomeScreen() {
   }
 
   const deadline = new Date('2026-06-11T18:00:00Z');
-  const now = new Date();
-  const daysLeft = Math.max(
-    0,
-    Math.ceil((deadline.getTime() - now.getTime()) / 86400000)
-  );
+  const daysLeft = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86400000));
+  const hasAccess = entitlement?.has_app_access ?? false;
 
   return (
     <ScrollView
@@ -116,118 +98,98 @@ export default function HomeScreen() {
       contentContainerStyle={styles.container}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchPools} />}
     >
+      {/* Banner */}
       <Card style={styles.banner}>
         <Text style={styles.bannerTitle}>FIFA World Cup 2026</Text>
         <Text style={styles.bannerSub}>
-          {daysLeft > 0 ? `${daysLeft} days until kickoff` : 'Tournament has started!'}
+          {daysLeft > 0 ? `${daysLeft} days until kickoff` : 'Tournament underway!'}
         </Text>
-        {profile?.full_name ? (
-          <Text style={styles.bannerUser}>Welcome, {profile.full_name}</Text>
-        ) : null}
+        {profile && (
+          <Text style={styles.bannerUser}>Welcome, {profile.username}!</Text>
+        )}
       </Card>
 
-      {!entitlement?.has_app_access ? (
-        <Card style={styles.accessBanner}>
-          <Text style={styles.accessTitle}>App access required</Text>
-          <Text style={styles.accessText}>
-            Purchase access to create and submit your pools.
-          </Text>
-          <Button
-            title="Buy Access"
-            onPress={() => router.push('/(app)/purchase')}
-            style={styles.accessButton}
-          />
-        </Card>
-      ) : null}
+      {/* Access banner */}
+      {!hasAccess && (
+        <TouchableOpacity style={styles.accessBanner} onPress={() => router.push('/(app)/purchase')}>
+          <Text style={styles.accessText}>⚽  Get full access — tap here</Text>
+        </TouchableOpacity>
+      )}
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Your Pools</Text>
-        <Button
-          title="Create Pool"
-          onPress={() => setShowCreateModal(true)}
-          fullWidth={false}
-        />
-      </View>
+      {/* My Pools */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>My Pools</Text>
+          <TouchableOpacity onPress={openCreateModal}>
+            <Text style={styles.createBtn}>+ New Pool</Text>
+          </TouchableOpacity>
+        </View>
 
-      {loading ? (
-        <Card>
-          <Text style={styles.emptyText}>Loading pools...</Text>
-        </Card>
-      ) : !pools.length ? (
-        <Card>
-          <Text style={styles.emptyTitle}>No pools yet</Text>
-          <Text style={styles.emptyText}>
-            Create your first pool and start predicting the World Cup.
-          </Text>
-        </Card>
-      ) : (
-        <FlatList
-          data={pools}
-          keyExtractor={(item) => item.id}
-          scrollEnabled={false}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => {
-            const submission = submissions[item.id];
-            const submitted = Boolean(submission);
-
+        {pools.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No pools yet.</Text>
+            <Text style={styles.emptySubText}>
+              {hasAccess
+                ? 'Create a pool or join one via an invite link.'
+                : 'Get access to create a pool.'}
+            </Text>
+            <Button
+              title={hasAccess ? 'Create Pool' : 'Get Access'}
+              onPress={hasAccess ? openCreateModal : () => router.push('/(app)/purchase')}
+              style={{ marginTop: spacing.md }}
+            />
+          </Card>
+        ) : (
+          pools.map((pool) => {
+            const sub = submissions[pool.id];
             return (
-              <TouchableOpacity activeOpacity={0.9} onPress={() => handleSelectPool(item)}>
+              <TouchableOpacity key={pool.id} onPress={() => handleSelectPool(pool)} activeOpacity={0.85}>
                 <Card style={styles.poolCard}>
-                  <View style={styles.poolHeader}>
-                    <Text style={styles.poolName}>{item.name}</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        submitted ? styles.statusSubmitted : styles.statusPending,
-                      ]}
-                    >
-                      <Text style={styles.statusBadgeText}>
-                        {submitted ? 'Submitted' : 'Pending'}
+                  <View style={styles.poolRow}>
+                    <View style={styles.poolInfo}>
+                      <Text style={styles.poolName}>{pool.name}</Text>
+                      <Text style={styles.poolMeta}>Max {pool.max_members} members</Text>
+                    </View>
+                    <View style={[styles.badge, sub?.is_valid ? styles.badgeGreen : styles.badgeGray]}>
+                      <Text style={styles.badgeText}>
+                        {sub?.is_valid ? 'Submitted' : sub ? 'Invalid' : 'Pending'}
                       </Text>
                     </View>
                   </View>
-
-                  <Text style={styles.poolMeta}>
-                    {submitted
-                      ? 'Your predictions are already submitted.'
-                      : 'You still need to complete your predictions.'}
-                  </Text>
+                  {sub && sub.validation_errors?.length > 0 && (
+                    <Text style={styles.validationError}>{sub.validation_errors[0]}</Text>
+                  )}
                 </Card>
               </TouchableOpacity>
             );
-          }}
-        />
-      )}
+          })
+        )}
+      </View>
 
-      <Modal
-        visible={showCreateModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setShowCreateModal(false);
-          setPoolName('');
-        }}
-      >
+      {/* Create Pool Modal */}
+      <Modal visible={showCreateModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Create New Pool</Text>
 
+            {createError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorText}>{createError}</Text>
+              </View>
+            ) : null}
+
             <Input
               label="Pool Name"
               value={poolName}
-              onChangeText={setPoolName}
+              onChangeText={(t) => { setPoolName(t); setCreateError(''); }}
               placeholder="Mi Quiniela 2026"
               autoFocus
             />
-
             <View style={styles.modalButtons}>
               <Button
                 title="Cancel"
                 variant="outline"
-                onPress={() => {
-                  setShowCreateModal(false);
-                  setPoolName('');
-                }}
+                onPress={() => { setShowCreateModal(false); setCreateError(''); }}
                 fullWidth={false}
                 style={{ flex: 1, marginRight: spacing.sm }}
               />
@@ -248,126 +210,69 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  container: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
+  screen: { flex: 1, backgroundColor: colors.background },
+  container: { padding: spacing.md, paddingBottom: spacing.xxl },
   banner: {
     backgroundColor: colors.primary,
     marginBottom: spacing.md,
     alignItems: 'center',
     paddingVertical: spacing.xl,
   },
-  bannerTitle: {
-    ...typography.h2,
-    color: '#fff',
-    textAlign: 'center',
-  },
-  bannerSub: {
-    ...typography.body,
-    color: '#c9d4f5',
-    marginTop: spacing.xs,
-  },
-  bannerUser: {
-    ...typography.label,
-    color: colors.accent,
-    marginTop: spacing.sm,
-  },
+  bannerTitle: { ...typography.h2, color: '#fff', textAlign: 'center' },
+  bannerSub: { ...typography.body, color: '#c9d4f5', marginTop: spacing.xs },
+  bannerUser: { ...typography.label, color: colors.accent, marginTop: spacing.sm },
   accessBanner: {
     backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    padding: spacing.md,
     marginBottom: spacing.md,
+    alignItems: 'center',
   },
-  accessTitle: {
-    ...typography.h3,
-    color: colors.background,
-    marginBottom: spacing.xs,
-  },
-  accessText: {
-    ...typography.body,
-    color: colors.background,
-    marginBottom: spacing.md,
-  },
-  accessButton: {
-    marginTop: spacing.xs,
-  },
+  accessText: { ...typography.label, color: colors.text, fontWeight: '600' },
+  section: { marginTop: spacing.sm },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-  listContent: {
-    gap: spacing.md,
-  },
-  poolCard: {
-    marginBottom: spacing.md,
-  },
-  poolHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  poolName: {
-    ...typography.h3,
-    color: colors.text,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  poolMeta: {
+  sectionTitle: { ...typography.h3, color: colors.text },
+  createBtn: { ...typography.label, color: colors.primary, fontWeight: '700' },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xl },
+  emptyText: { ...typography.h3, color: colors.text },
+  emptySubText: {
     ...typography.body,
-    color: colors.textSecondary,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-  },
-  statusSubmitted: {
-    backgroundColor: '#D1FAE5',
-  },
-  statusPending: {
-    backgroundColor: '#FEF3C7',
-  },
-  statusBadgeText: {
-    ...typography.caption,
-    color: colors.text,
-  },
-  emptyTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    padding: spacing.md,
-  },
+  poolCard: { marginBottom: spacing.sm },
+  poolRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  poolInfo: { flex: 1 },
+  poolName: { ...typography.h3, color: colors.text },
+  poolMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  badge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full },
+  badgeGreen: { backgroundColor: '#d1fae5' },
+  badgeGray: { backgroundColor: colors.border },
+  badgeText: { ...typography.caption, fontWeight: '600', color: colors.text },
+  validationError: { ...typography.caption, color: colors.error, marginTop: spacing.xs },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
-  modalTitle: {
-    ...typography.h3,
-    color: colors.text,
+  modalTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.lg },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
     marginBottom: spacing.md,
   },
-  modalButtons: {
-    flexDirection: 'row',
-    marginTop: spacing.md,
-  },
+  errorText: { color: colors.error, fontSize: 13 },
+  modalButtons: { flexDirection: 'row', marginTop: spacing.sm },
 });

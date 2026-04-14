@@ -4,114 +4,126 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Alert,
-  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import {
-  initIAP,
-  getProducts,
   purchaseAppAccess,
   purchaseExtraSlots,
   restorePurchases,
 } from '@/lib/payments';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
-
-interface Product {
-  productId: string;
-  title: string;
-  description: string;
-  localizedPrice: string;
-}
+import type { Entitlement } from '@/types';
 
 export default function PurchaseScreen() {
+  const router = useRouter();
   const { user, entitlement, setEntitlement } = useAuthStore();
   const { currentPool } = usePoolStore();
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [iapReady, setIapReady] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    async function setup() {
-      const ready = await initIAP();
-      setIapReady(ready);
-      if (ready) {
-        const prods = await getProducts();
-        setProducts(prods as Product[]);
-      }
-      setLoading(false);
-    }
-    setup();
-  }, []);
+  const hasAccess = entitlement?.has_app_access ?? false;
+  const isWeb = Platform.OS === 'web';
+
+  async function refreshEntitlement() {
+    if (!user) return;
+    const { data } = await supabase
+      .from('entitlements')
+      .select('*')
+      .eq('user_id', user.id)
+      .is('pool_id', null)
+      .maybeSingle();
+    if (data) setEntitlement(data as Entitlement);
+  }
 
   async function handlePurchaseAccess() {
     if (!user) return;
     setPurchasing('access');
+    setMessage(null);
+
     const success = await purchaseAppAccess(user.id);
     setPurchasing(null);
 
     if (success) {
-      Alert.alert('Purchase Successful!', 'You now have full app access.');
-      // Refresh entitlement
-      const { data } = await import('@/lib/supabase').then(({ supabase }) =>
-        supabase
-          .from('entitlements')
-          .select('*')
-          .eq('user_id', user.id)
-          .is('pool_id', null)
-          .single()
-      );
-      if (data) setEntitlement(data);
+      await refreshEntitlement();
+      setMessage({ type: 'success', text: 'Access granted! You can now create pools.' });
     } else {
-      Alert.alert('Purchase Failed', 'Please try again or contact support.');
+      setMessage({ type: 'error', text: 'Purchase failed. Please try again.' });
     }
   }
 
   async function handlePurchaseSlots() {
-    if (!user || !currentPool) {
-      Alert.alert('No Pool Selected', 'Select a pool from Home first.');
+    if (!user) return;
+    if (!currentPool) {
+      setMessage({ type: 'error', text: 'Select a pool from Home first.' });
       return;
     }
     setPurchasing('slots');
+    setMessage(null);
+
     const success = await purchaseExtraSlots(user.id, currentPool.id, 1);
     setPurchasing(null);
 
     if (success) {
-      Alert.alert('Slots Added!', '1 additional member slot has been added to your pool.');
+      await refreshEntitlement();
+      setMessage({ type: 'success', text: '1 extra member slot added!' });
     } else {
-      Alert.alert('Purchase Failed', 'Please try again.');
+      setMessage({ type: 'error', text: 'Purchase failed. Please try again.' });
     }
   }
 
   async function handleRestore() {
     if (!user) return;
     setRestoring(true);
+    setMessage(null);
     const success = await restorePurchases(user.id);
+    if (success) {
+      await refreshEntitlement();
+      setMessage({ type: 'success', text: 'Purchases restored.' });
+    } else {
+      setMessage({ type: 'error', text: 'No previous purchases found.' });
+    }
     setRestoring(false);
-    Alert.alert(
-      success ? 'Restored' : 'Nothing to Restore',
-      success ? 'Your purchases have been restored.' : 'No previous purchases found.'
-    );
   }
-
-  const hasAccess = entitlement?.has_app_access ?? false;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Get Full Access</Text>
         <Text style={styles.subtitle}>One-time purchase to join the World Cup pool</Text>
+        {isWeb && (
+          <View style={styles.webNote}>
+            <Text style={styles.webNoteText}>
+              Demo mode — purchase is simulated on web
+            </Text>
+          </View>
+        )}
       </View>
 
-      {/* Access Status */}
+      {/* Message banner */}
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'success' ? styles.bannerSuccess : styles.bannerError]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+          {message.type === 'success' && hasAccess && (
+            <Button
+              title="Go to Home"
+              variant="outline"
+              onPress={() => router.replace('/(app)')}
+              style={{ marginTop: spacing.sm }}
+            />
+          )}
+        </View>
+      )}
+
+      {/* Access status */}
       {hasAccess ? (
         <Card style={styles.activeCard}>
           <Ionicons name="checkmark-circle" size={40} color={colors.success} />
@@ -119,6 +131,11 @@ export default function PurchaseScreen() {
           <Text style={styles.activeSub}>
             {entitlement?.total_slots ?? 10} member slots available
           </Text>
+          <Button
+            title="Go to Home"
+            onPress={() => router.replace('/(app)')}
+            style={{ marginTop: spacing.md }}
+          />
         </Card>
       ) : (
         <Card style={styles.pricingCard}>
@@ -133,7 +150,7 @@ export default function PurchaseScreen() {
             <Feature text="Live standings & scoring" />
           </View>
           <Button
-            title={purchasing === 'access' ? 'Processing...' : 'Purchase Access — $5'}
+            title={purchasing === 'access' ? 'Processing...' : isWeb ? 'Get Access — $5 (Demo)' : 'Purchase Access — $5'}
             onPress={handlePurchaseAccess}
             loading={purchasing === 'access'}
             style={{ marginTop: spacing.md }}
@@ -142,29 +159,32 @@ export default function PurchaseScreen() {
       )}
 
       {/* Extra Slots */}
-      <Card style={styles.slotsCard}>
-        <View style={styles.pricingHeader}>
-          <Text style={styles.pricingTitle}>Extra Member Slots</Text>
-          <Text style={styles.price}>$5 / slot</Text>
-        </View>
-        <Text style={styles.slotsDesc}>
-          Add 1 additional member slot to your current pool.
-          {currentPool ? ` Pool: "${currentPool.name}"` : ' Select a pool first.'}
-        </Text>
-        <Button
-          title={purchasing === 'slots' ? 'Processing...' : 'Add 1 Slot — $5'}
-          variant={hasAccess ? 'primary' : 'outline'}
-          onPress={handlePurchaseSlots}
-          loading={purchasing === 'slots'}
-          disabled={!hasAccess}
-          style={{ marginTop: spacing.md }}
-        />
-        {!hasAccess && (
-          <Text style={styles.requiresAccess}>Requires app access first</Text>
-        )}
-      </Card>
+      {hasAccess && (
+        <Card style={styles.slotsCard}>
+          <View style={styles.pricingHeader}>
+            <Text style={styles.pricingTitle}>Extra Member Slots</Text>
+            <Text style={styles.price}>$5 / slot</Text>
+          </View>
+          <Text style={styles.slotsDesc}>
+            Add 1 member slot to:{' '}
+            <Text style={{ fontWeight: '700' }}>
+              {currentPool ? `"${currentPool.name}"` : 'no pool selected'}
+            </Text>
+          </Text>
+          <Button
+            title={purchasing === 'slots' ? 'Processing...' : 'Add 1 Slot — $5'}
+            onPress={handlePurchaseSlots}
+            loading={purchasing === 'slots'}
+            disabled={!currentPool}
+            style={{ marginTop: spacing.md }}
+          />
+          {!currentPool && (
+            <Text style={styles.hint}>Select a pool from Home first</Text>
+          )}
+        </Card>
+      )}
 
-      {/* Entitlement Summary */}
+      {/* Entitlement summary */}
       {entitlement && (
         <Card style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Your Entitlements</Text>
@@ -174,7 +194,6 @@ export default function PurchaseScreen() {
         </Card>
       )}
 
-      {/* Restore */}
       <Button
         title={restoring ? 'Restoring...' : 'Restore Purchases'}
         variant="outline"
@@ -184,8 +203,9 @@ export default function PurchaseScreen() {
       />
 
       <Text style={styles.legal}>
-        Payment processed securely via the App Store / Google Play.
-        One-time purchase. No subscription.
+        {isWeb
+          ? 'Web demo mode — no real payment processed.'
+          : 'Payment processed via App Store / Google Play. One-time purchase.'}
       </Text>
     </ScrollView>
   );
@@ -193,33 +213,21 @@ export default function PurchaseScreen() {
 
 function Feature({ text }: { text: string }) {
   return (
-    <View style={featureStyles.row}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
       <Ionicons name="checkmark" size={16} color={colors.success} />
-      <Text style={featureStyles.text}>{text}</Text>
+      <Text style={{ ...typography.body, color: colors.text, marginLeft: spacing.sm }}>{text}</Text>
     </View>
   );
 }
 
 function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <View style={summaryStyles.row}>
-      <Text style={summaryStyles.label}>{label}</Text>
-      <Text style={[summaryStyles.value, bold && summaryStyles.bold]}>{value}</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs }}>
+      <Text style={{ ...typography.body, color: colors.textMuted }}>{label}</Text>
+      <Text style={{ ...typography.body, color: colors.text, fontWeight: bold ? '700' : '400' }}>{value}</Text>
     </View>
   );
 }
-
-const featureStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  text: { ...typography.body, color: colors.text, marginLeft: spacing.sm },
-});
-
-const summaryStyles = StyleSheet.create({
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
-  label: { ...typography.body, color: colors.textMuted },
-  value: { ...typography.body, color: colors.text },
-  bold: { fontWeight: '700', color: colors.primary },
-});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
@@ -227,6 +235,22 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', paddingVertical: spacing.xl },
   title: { ...typography.h1, color: colors.primary },
   subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+  webNote: {
+    backgroundColor: '#fef9c3',
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.md,
+  },
+  webNoteText: { ...typography.caption, color: '#92400e' },
+  messageBanner: {
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  bannerSuccess: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: colors.success },
+  bannerError: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: colors.error },
+  messageText: { ...typography.body, color: colors.text },
   activeCard: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
@@ -246,10 +270,10 @@ const styles = StyleSheet.create({
   },
   pricingTitle: { ...typography.h3, color: colors.text },
   price: { ...typography.h2, color: colors.primary },
-  features: { gap: 0 },
+  features: {},
   slotsCard: { marginBottom: spacing.md },
   slotsDesc: { ...typography.body, color: colors.textMuted },
-  requiresAccess: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.xs },
+  hint: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.xs },
   summaryCard: { marginBottom: spacing.md },
   summaryTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.md },
   legal: {
