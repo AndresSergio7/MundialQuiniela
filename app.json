@@ -14,12 +14,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.mundialquiniela.app",
-      "buildNumber": "1",
-      "infoPlist": {
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
-      }
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,11 +28,11 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro",
-      "output": "static"
+      "output": "static",
+      "name": "MundialQuiniela"
     },
     "plugins": [
-      "expo-router",
-      "expo-secure-store"
+      "expo-router"
     ],
     "scheme": "mundialquiniela",
     "extra": {

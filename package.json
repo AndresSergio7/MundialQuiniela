@@ -48,5 +48,8 @@
     "eslint-config-expo": "~8.0.0",
     "typescript": "^5.3.3"
   },
-  "private": true
+  "private": true,
+  "browser": {
+    "react-native-iap": "./src/lib/iap-stub.web.js"
+  }
 }
