@@ -8,8 +8,13 @@ export function useAuth() {
     useAuthStore();
 
   useEffect(() => {
-    // Resolve initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let mounted = true;
+
+    // 1. Check for existing session
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (!mounted) return;
+      if (error) console.error('getSession error:', error.message);
+
       if (session?.user) {
         const u: AuthUser = {
           id: session.user.id,
@@ -17,13 +22,21 @@ export function useAuth() {
           created_at: session.user.created_at,
         };
         setUser(u);
-        loadProfile(u.id);
+        loadProfile(u.id).finally(() => {
+          if (mounted) useAuthStore.setState({ isLoading: false });
+        });
+      } else {
+        useAuthStore.setState({ isLoading: false });
       }
-      useAuthStore.setState({ isLoading: false });
+    }).catch((err) => {
+      console.error('Auth init error:', err);
+      if (mounted) useAuthStore.setState({ isLoading: false });
     });
 
-    // Listen for auth changes
+    // 2. Listen for auth changes (sign in / sign out)
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
       if (session?.user) {
         const u: AuthUser = {
           id: session.user.id,
@@ -32,35 +45,42 @@ export function useAuth() {
         };
         setUser(u);
         loadProfile(u.id);
+        useAuthStore.setState({ isLoading: false });
       } else {
         setUser(null);
         setProfile(null);
         setEntitlement(null);
+        useAuthStore.setState({ isLoading: false });
       }
     });
 
     return () => {
+      mounted = false;
       listener?.subscription.unsubscribe();
     };
   }, []);
 
   async function loadProfile(userId: string) {
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    try {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    if (profileData) setProfile(profileData as Profile);
+      if (profileData) setProfile(profileData as Profile);
 
-    const { data: entitlementData } = await supabase
-      .from('entitlements')
-      .select('*')
-      .eq('user_id', userId)
-      .is('pool_id', null)
-      .single();
+      const { data: entitlementData } = await supabase
+        .from('entitlements')
+        .select('*')
+        .eq('user_id', userId)
+        .is('pool_id', null)
+        .maybeSingle();
 
-    if (entitlementData) setEntitlement(entitlementData as Entitlement);
+      if (entitlementData) setEntitlement(entitlementData as Entitlement);
+    } catch (err) {
+      console.error('loadProfile error:', err);
+    }
   }
 
   return { user, profile, entitlement, isLoading };

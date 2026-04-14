@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Alert,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -20,26 +19,40 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errorMsg, setErrorMsg] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
   function validate(): boolean {
-    const newErrors: typeof errors = {};
-    if (!email.includes('@')) newErrors.email = 'Enter a valid email.';
-    if (password.length < 6) newErrors.password = 'Password must be at least 6 characters.';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e: typeof fieldErrors = {};
+    if (!email.trim() || !email.includes('@')) e.email = 'Enter a valid email.';
+    if (password.length < 6) e.password = 'Password must be at least 6 characters.';
+    setFieldErrors(e);
+    return Object.keys(e).length === 0;
   }
 
   async function handleLogin() {
+    setErrorMsg('');
     if (!validate()) return;
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
 
     if (error) {
-      Alert.alert('Login Failed', error.message);
+      setErrorMsg(error.message);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    if (data.session) {
+      // Navigate directly — don't rely solely on auth state change
+      router.replace('/(app)');
+    } else {
+      setErrorMsg('Login failed. Please try again.');
+      setLoading(false);
+    }
   }
 
   return (
@@ -58,23 +71,29 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
+          {errorMsg ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
           <Input
             label="Email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
             placeholder="you@email.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            error={errors.email}
+            error={fieldErrors.email}
           />
           <Input
             label="Password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
             placeholder="••••••••"
             secureTextEntry
-            error={errors.password}
+            error={fieldErrors.password}
           />
 
           <Button
@@ -100,16 +119,21 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
-  container: {
-    flexGrow: 1,
-    padding: spacing.xl,
-    justifyContent: 'center',
-  },
+  container: { flexGrow: 1, padding: spacing.xl, justifyContent: 'center' },
   header: { alignItems: 'center', marginBottom: spacing.xxl },
   emoji: { fontSize: 64, marginBottom: spacing.md },
   title: { ...typography.h1, color: colors.primary },
   subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
   form: { gap: spacing.sm },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 8,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  errorBannerText: { color: colors.error, fontSize: 14 },
   switchButton: { alignItems: 'center', marginTop: spacing.md },
   switchText: { ...typography.body, color: colors.textMuted },
   switchLink: { color: colors.primary, fontWeight: '600' },

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Alert,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -22,39 +21,48 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   function validate(): boolean {
     const e: Record<string, string> = {};
     if (username.length < 3) e.username = 'Username must be at least 3 characters.';
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Username can only contain letters, numbers, and underscores.';
-    if (!email.includes('@')) e.email = 'Enter a valid email.';
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Only letters, numbers, and underscores.';
+    if (!email.trim() || !email.includes('@')) e.email = 'Enter a valid email.';
     if (password.length < 6) e.password = 'Password must be at least 6 characters.';
-    setErrors(e);
+    setFieldErrors(e);
     return Object.keys(e).length === 0;
   }
 
   async function handleRegister() {
+    setErrorMsg('');
+    setSuccessMsg('');
     if (!validate()) return;
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({
-      email,
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
       password,
       options: {
-        data: { username, full_name: fullName },
+        data: { username: username.trim(), full_name: fullName.trim() },
       },
     });
 
     if (error) {
-      Alert.alert('Registration Failed', error.message);
-    } else {
-      Alert.alert(
-        'Check Your Email',
-        'We sent a confirmation link to your email.',
-        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-      );
+      setErrorMsg(error.message);
+      setLoading(false);
+      return;
     }
+
+    // If email confirmation is disabled in Supabase, session is returned immediately
+    if (data.session) {
+      router.replace('/(app)');
+      return;
+    }
+
+    // Email confirmation required
+    setSuccessMsg('Check your email for a confirmation link, then sign in.');
     setLoading(false);
   }
 
@@ -74,39 +82,53 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.form}>
+          {errorMsg ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {successMsg ? (
+            <View style={styles.successBanner}>
+              <Text style={styles.successBannerText}>{successMsg}</Text>
+              <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+                <Text style={styles.successLink}>Go to Sign In →</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <Input
             label="Username"
             value={username}
-            onChangeText={setUsername}
+            onChangeText={(t) => { setUsername(t); setErrorMsg(''); }}
             placeholder="el_crack"
             autoCapitalize="none"
             autoCorrect={false}
-            error={errors.username}
+            error={fieldErrors.username}
           />
           <Input
-            label="Full Name"
+            label="Full Name (optional)"
             value={fullName}
             onChangeText={setFullName}
             placeholder="Lionel Messi"
-            error={errors.fullName}
           />
           <Input
             label="Email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
             placeholder="you@email.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            error={errors.email}
+            error={fieldErrors.email}
           />
           <Input
             label="Password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
             placeholder="••••••••"
             secureTextEntry
-            error={errors.password}
+            error={fieldErrors.password}
           />
 
           <Button
@@ -138,6 +160,28 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.primary },
   subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
   form: { gap: spacing.sm },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 8,
+    padding: spacing.md,
+  },
+  errorBannerText: { color: colors.error, fontSize: 14 },
+  successBanner: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: 8,
+    padding: spacing.md,
+  },
+  successBannerText: { color: colors.success, fontSize: 14 },
+  successLink: {
+    color: colors.primary,
+    fontWeight: '600',
+    marginTop: spacing.sm,
+    fontSize: 14,
+  },
   switchButton: { alignItems: 'center', marginTop: spacing.md },
   switchText: { ...typography.body, color: colors.textMuted },
   switchLink: { color: colors.primary, fontWeight: '600' },
