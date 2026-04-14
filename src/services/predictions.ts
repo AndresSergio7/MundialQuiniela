@@ -27,6 +27,10 @@ export async function fetchUserPredictions(
   return (data ?? []) as Prediction[];
 }
 
+// Alias used by some screens
+export const getPredictions = (userId: string, poolId: string) =>
+  fetchUserPredictions(poolId, userId);
+
 // ---- savePrediction ----
 export async function savePrediction(
   poolId: string,
@@ -140,6 +144,9 @@ export async function submitQuiniela(
 
   return { success: validation.valid, errors: validation.errors };
 }
+
+// Alias for backwards compatibility
+export const submitPredictions = submitQuiniela;
 
 // ---- lockPredictions ----
 export async function lockPredictions(poolId: string): Promise<void> {

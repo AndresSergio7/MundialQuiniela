@@ -9,3 +9,6 @@ export async function fetchAllMatches(): Promise<Match[]> {
 
   return (data ?? []) as Match[];
 }
+
+// Alias for compatibility with any code that uses listMatches
+export const listMatches = fetchAllMatches;

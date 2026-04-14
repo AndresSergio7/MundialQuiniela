@@ -75,7 +75,6 @@ export default function PredictionsScreen() {
     }
     setLocalScores(scores);
 
-    // Start in view mode only if already validly submitted and before deadline
     const deadlinePast = new Date(activePool.prediction_deadline) <= new Date();
     if (sub?.is_valid && !deadlinePast) {
       setMode('view');
@@ -88,7 +87,7 @@ export default function PredictionsScreen() {
 
   useEffect(() => {
     loadAll();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPool?.id]);
 
   function handleScoreChange(matchId: string, side: 'home' | 'away', val: string) {
