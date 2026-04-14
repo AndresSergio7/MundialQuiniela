@@ -22,6 +22,12 @@ export async function createPool(
     .single();
 
   if (error || !pool) {
+    if (error?.code === '23503') {
+      return {
+        pool: null,
+        error: 'Your user profile is missing in Supabase. Sign out and sign in again, then retry.',
+      };
+    }
     return { pool: null, error: error?.message ?? 'Failed to create pool.' };
   }
 

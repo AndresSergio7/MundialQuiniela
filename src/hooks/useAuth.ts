@@ -22,7 +22,7 @@ export function useAuth() {
           created_at: session.user.created_at,
         };
         setUser(u);
-        loadProfile(u.id).finally(() => {
+        loadProfile(u.id, u.email).finally(() => {
           if (mounted) useAuthStore.setState({ isLoading: false });
         });
       } else {
@@ -44,7 +44,7 @@ export function useAuth() {
           created_at: session.user.created_at,
         };
         setUser(u);
-        loadProfile(u.id);
+        loadProfile(u.id, u.email);
         useAuthStore.setState({ isLoading: false });
       } else {
         setUser(null);
@@ -60,15 +60,37 @@ export function useAuth() {
     };
   }, []);
 
-  async function loadProfile(userId: string) {
+  async function loadProfile(userId: string, email?: string) {
     try {
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (profileData) setProfile(profileData as Profile);
+      if (profileData) {
+        setProfile(profileData as Profile);
+      } else {
+        // Self-heal legacy users whose auth account exists without a profile row.
+        const emailPrefix = (email ?? 'user').split('@')[0] || 'user';
+        const usernameBase = emailPrefix.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || 'user';
+        const fallbackUsername = `${usernameBase}_${userId.slice(0, 6)}`;
+
+        const { data: createdProfile } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: userId,
+              username: fallbackUsername,
+              full_name: '',
+            },
+            { onConflict: 'id' }
+          )
+          .select('*')
+          .single();
+
+        if (createdProfile) setProfile(createdProfile as Profile);
+      }
 
       const { data: entitlementData } = await supabase
         .from('entitlements')

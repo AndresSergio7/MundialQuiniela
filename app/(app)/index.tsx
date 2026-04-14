@@ -23,12 +23,13 @@ import type { Pool, Submission } from '@/types';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, profile } = useAuthStore();
+  const { user, profile, signOut } = useAuthStore();
   const { pools, loading, fetchPools, setCurrentPool } = usePool();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [poolName, setPoolName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
 
   useEffect(() => {
@@ -95,6 +96,18 @@ export default function HomeScreen() {
     router.push('/(app)/predictions');
   }
 
+  async function handleSignOut() {
+    try {
+      setSigningOut(true);
+      await signOut();
+      router.replace('/(auth)/login');
+    } catch {
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
   const deadline = new Date('2026-06-11T18:00:00Z');
   const now = new Date();
   const daysLeft = Math.max(
@@ -116,6 +129,15 @@ export default function HomeScreen() {
         {profile?.full_name ? (
           <Text style={styles.bannerUser}>Welcome, {profile.full_name}</Text>
         ) : null}
+        <Button
+          title="Sign Out"
+          variant="outline"
+          onPress={handleSignOut}
+          loading={signingOut}
+          fullWidth={false}
+          style={styles.signOutButton}
+          textStyle={styles.signOutButtonText}
+        />
       </Card>
 
       <View style={styles.sectionHeader}>
@@ -254,6 +276,14 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     marginTop: spacing.sm,
+  },
+  signOutButton: {
+    marginTop: spacing.md,
+    borderColor: '#fff',
+    backgroundColor: 'transparent',
+  },
+  signOutButtonText: {
+    color: '#fff',
   },
   sectionHeader: {
     flexDirection: 'row',
