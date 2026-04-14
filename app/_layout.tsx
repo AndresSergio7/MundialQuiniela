@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import * as Linking from 'expo-linking';
 import { useAuth } from '@/hooks/useAuth';
 import { parseInviteLink } from '@/services/invites';
 import { joinViaInvite } from '@/services/invites';
@@ -14,22 +14,41 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
-  // Handle deep links (invite links)
+  // Handle deep links (invite links) — native only
   useEffect(() => {
-    const handleUrl = async (url: string) => {
-      const parsed = parseInviteLink(url);
-      if (!parsed || !user) return;
-      const { poolId, token } = parsed;
-      await joinViaInvite(user.id, poolId, token);
-      router.replace('/(app)');
-    };
+    if (Platform.OS === 'web') return;
 
-    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
-    Linking.getInitialURL().then((url) => {
-      if (url) handleUrl(url);
+    let subscription: ReturnType<typeof import('expo-linking').addEventListener> | null = null;
+
+    import('expo-linking').then((Linking) => {
+      const handleUrl = async (url: string) => {
+        const parsed = parseInviteLink(url);
+        if (!parsed || !user) return;
+        await joinViaInvite(user.id, parsed.poolId, parsed.token);
+        router.replace('/(app)');
+      };
+
+      subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+      Linking.getInitialURL().then((url) => {
+        if (url) handleUrl(url);
+      });
     });
 
-    return () => subscription.remove();
+    return () => subscription?.remove();
+  }, [user]);
+
+  // Handle web invite links via query params
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (!user) return;
+    const params = new URLSearchParams(window.location.search);
+    const poolId = params.get('pool');
+    const token = params.get('token');
+    if (poolId && token) {
+      joinViaInvite(user.id, poolId, token).then(() => {
+        router.replace('/(app)');
+      });
+    }
   }, [user]);
 
   // Guard routes
