@@ -3,38 +3,20 @@
 // ============================================================
 
 import { supabase } from '@/lib/supabase';
-import type { Pool, PoolMember, Entitlement } from '@/types';
+import type { Pool, PoolMember } from '@/types';
 
 // ---- createPool ----
 export async function createPool(
   adminId: string,
   name: string
 ): Promise<{ pool: Pool | null; error: string | null }> {
-  // Verify entitlement
-  const { data: ent, error: entError } = await supabase
-    .from('entitlements')
-    .select('has_app_access, total_slots')
-    .eq('user_id', adminId)
-    .is('pool_id', null)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (entError) {
-    return { pool: null, error: 'Unable to verify app access. Please try again.' };
-  }
-
-  if (!ent?.has_app_access) {
-    return { pool: null, error: 'Purchase required to create a pool.' };
-  }
-
   // Create pool
   const { data: pool, error } = await supabase
     .from('pools')
     .insert({
       name,
       admin_id: adminId,
-      max_members: ent.total_slots ?? 10,
+      max_members: 10,
     })
     .select()
     .single();
@@ -48,15 +30,6 @@ export async function createPool(
     pool_id: pool.id,
     user_id: adminId,
     role: 'admin',
-  });
-
-  // Create pool-level entitlement
-  await supabase.from('entitlements').upsert({
-    user_id: adminId,
-    pool_id: pool.id,
-    has_app_access: true,
-    base_slots: 10,
-    extra_slots: 0,
   });
 
   return { pool: pool as Pool, error: null };

@@ -23,7 +23,7 @@ import type { Pool, Submission } from '@/types';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, profile, entitlement } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { pools, loading, fetchPools, setCurrentPool } = usePool();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -60,14 +60,6 @@ export default function HomeScreen() {
 
     if (!user) {
       Alert.alert('Sign in required', 'Please sign in again to create a pool.');
-      return;
-    }
-
-    if (!entitlement?.has_app_access) {
-      Alert.alert('Purchase Required', 'Buy app access to create a pool.', [
-        { text: 'Cancel' },
-        { text: 'Purchase', onPress: () => router.push('/(app)/purchase') },
-      ]);
       return;
     }
 
@@ -125,20 +117,6 @@ export default function HomeScreen() {
           <Text style={styles.bannerUser}>Welcome, {profile.full_name}</Text>
         ) : null}
       </Card>
-
-      {!entitlement?.has_app_access ? (
-        <Card style={styles.accessBanner}>
-          <Text style={styles.accessTitle}>App access required</Text>
-          <Text style={styles.accessText}>
-            Purchase access to create and submit your pools.
-          </Text>
-          <Button
-            title="Buy Access"
-            onPress={() => router.push('/(app)/purchase')}
-            style={styles.accessButton}
-          />
-        </Card>
-      ) : null}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Your Pools</Text>
@@ -276,23 +254,6 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     marginTop: spacing.sm,
-  },
-  accessBanner: {
-    backgroundColor: colors.accent,
-    marginBottom: spacing.md,
-  },
-  accessTitle: {
-    ...typography.h3,
-    color: colors.background,
-    marginBottom: spacing.xs,
-  },
-  accessText: {
-    ...typography.body,
-    color: colors.background,
-    marginBottom: spacing.md,
-  },
-  accessButton: {
-    marginTop: spacing.xs,
   },
   sectionHeader: {
     flexDirection: 'row',

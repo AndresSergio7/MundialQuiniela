@@ -53,15 +53,6 @@ export default function AppLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="purchase/index"
-        options={{
-          title: 'Purchase',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="card" size={size} color={color} />
-          ),
-        }}
-      />
     </Tabs>
   );
 }
