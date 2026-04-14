@@ -1,181 +1,101 @@
-// ============================================================
-// PREDICTIONS SERVICE
-// ============================================================
-
 import { supabase } from '@/lib/supabase';
-import { validateQuiniela, validateSinglePrediction } from '@/lib/validation';
-import type {
-  Prediction,
-  PredictionMap,
-  Submission,
-  Match,
-  ValidationResult,
-} from '@/types';
+import type { Prediction } from '@/types';
 
-// ---- fetchMatches ----
-export async function fetchAllMatches(): Promise<Match[]> {
-  const { data } = await supabase
-    .from('matches')
-    .select('*')
-    .order('match_number', { ascending: true });
-
-  return (data ?? []) as Match[];
+interface SavePredictionInput {
+  pool_id: string;
+  user_id: string;
+  match_id: string;
+  home_score: number;
+  away_score: number;
 }
 
-// ---- fetchUserPredictions ----
-export async function fetchUserPredictions(
-  poolId: string,
-  userId: string
-): Promise<Prediction[]> {
-  const { data } = await supabase
+export async function getPredictions(userId: string, poolId: string): Promise<Prediction[]> {
+  const { data, error } = await supabase
     .from('predictions')
-    .select('*, match:matches(*)')
-    .eq('pool_id', poolId)
+    .select('*')
     .eq('user_id', userId)
-    .order('match_id');
+    .eq('pool_id', poolId);
 
-  return (data ?? []) as Prediction[];
+  if (error) throw error;
+  return data ?? [];
 }
 
-// ---- savePrediction ----
-export async function savePrediction(
-  poolId: string,
-  userId: string,
-  matchId: string,
-  homeScore: number,
-  awayScore: number
-): Promise<{ success: boolean; error: string | null }> {
-  // Validate deadline
-  const { data: pool } = await supabase
-    .from('pools')
-    .select('prediction_deadline')
-    .eq('id', poolId)
+export async function savePrediction(input: SavePredictionInput): Promise<Prediction> {
+  const { data, error } = await supabase
+    .from('predictions')
+    .upsert(input, {
+      onConflict: 'pool_id,user_id,match_id',
+    })
+    .select()
     .single();
 
-  if (!pool) return { success: false, error: 'Pool not found.' };
-  if (new Date(pool.prediction_deadline) <= new Date()) {
-    return { success: false, error: 'Prediction deadline has passed.' };
-  }
-
-  // Validate score format
-  const validErr = validateSinglePrediction(homeScore, awayScore);
-  if (validErr) return { success: false, error: validErr };
-
-  const { error } = await supabase.from('predictions').upsert(
-    {
-      pool_id: poolId,
-      user_id: userId,
-      match_id: matchId,
-      home_score: homeScore,
-      away_score: awayScore,
-      is_locked: false,
-    },
-    { onConflict: 'pool_id,user_id,match_id' }
-  );
-
-  return { success: !error, error: error?.message ?? null };
+  if (error) throw error;
+  return data;
 }
 
-// ---- savePredictionsBulk ----
-export async function savePredictionsBulk(
-  poolId: string,
-  userId: string,
-  predictions: PredictionMap
-): Promise<{ success: boolean; error: string | null }> {
-  const { data: pool } = await supabase
-    .from('pools')
-    .select('prediction_deadline')
-    .eq('id', poolId)
-    .single();
+export async function submitPredictions(poolId: string, userId: string) {
+  const { data: predictions, error: predictionsError } = await supabase
+    .from('predictions')
+    .select('*')
+    .eq('pool_id', poolId)
+    .eq('user_id', userId);
 
-  if (!pool) return { success: false, error: 'Pool not found.' };
-  if (new Date(pool.prediction_deadline) <= new Date()) {
-    return { success: false, error: 'Prediction deadline has passed.' };
+  if (predictionsError) throw predictionsError;
+
+  const validationErrors: string[] = [];
+
+  if (!predictions || predictions.length !== 72) {
+    validationErrors.push('You must complete all 72 matches.');
   }
 
-  const rows = Object.entries(predictions).map(([matchId, pred]) => ({
+  const scoreCounts = new Map<string, number>();
+  let drawCount = 0;
+
+  for (const p of predictions ?? []) {
+    const key = `${p.home_score}-${p.away_score}`;
+    scoreCounts.set(key, (scoreCounts.get(key) ?? 0) + 1);
+
+    if (p.home_score === p.away_score) {
+      drawCount += 1;
+    }
+  }
+
+  if (drawCount < 5) {
+    validationErrors.push('You must predict at least 5 draws.');
+  }
+
+  const distinctScores = scoreCounts.size;
+  if (distinctScores < 7) {
+    validationErrors.push('You must use at least 7 different scorelines.');
+  }
+
+  const repeatedAtLeastTwice = Array.from(scoreCounts.values()).filter((count) => count >= 2).length;
+  if (repeatedAtLeastTwice < 5) {
+    validationErrors.push('At least 5 scorelines must appear 2 or more times.');
+  }
+
+  const overusedScore = Array.from(scoreCounts.values()).some((count) => count > 28);
+  if (overusedScore) {
+    validationErrors.push('No scoreline can be used more than 28 times.');
+  }
+
+  const payload = {
     pool_id: poolId,
     user_id: userId,
-    match_id: matchId,
-    home_score: pred.home,
-    away_score: pred.away,
-    is_locked: false,
-  }));
+    submitted_at: new Date().toISOString(),
+    is_valid: validationErrors.length === 0,
+    validation_errors: validationErrors,
+    locked_at: validationErrors.length === 0 ? new Date().toISOString() : null,
+  };
 
-  const { error } = await supabase
-    .from('predictions')
-    .upsert(rows, { onConflict: 'pool_id,user_id,match_id' });
-
-  return { success: !error, error: error?.message ?? null };
-}
-
-// ---- submitQuiniela ----
-export async function submitQuiniela(
-  poolId: string,
-  userId: string
-): Promise<{ success: boolean; errors: string[] }> {
-  // Fetch all matches
-  const matches = await fetchAllMatches();
-  const matchIds = matches.map((m) => m.id);
-
-  // Fetch current predictions
-  const predictions = await fetchUserPredictions(poolId, userId);
-  const predMap: PredictionMap = {};
-  for (const p of predictions) {
-    predMap[p.match_id] = { home: p.home_score, away: p.away_score };
-  }
-
-  // Validate
-  const validation: ValidationResult = validateQuiniela(predMap, matchIds);
-
-  // Upsert submission record
-  await supabase.from('submissions').upsert(
-    {
-      pool_id: poolId,
-      user_id: userId,
-      submitted_at: new Date().toISOString(),
-      is_valid: validation.valid,
-      validation_errors: validation.errors,
-    },
-    { onConflict: 'pool_id,user_id' }
-  );
-
-  return { success: validation.valid, errors: validation.errors };
-}
-
-// ---- lockPredictions ----
-// Called after deadline — locks all predictions in a pool
-export async function lockPredictions(poolId: string): Promise<void> {
-  await supabase
-    .from('predictions')
-    .update({ is_locked: true })
-    .eq('pool_id', poolId);
-
-  await supabase
+  const { data, error } = await supabase
     .from('submissions')
-    .update({ locked_at: new Date().toISOString() })
-    .eq('pool_id', poolId);
-}
-
-// ---- getSubmissionStatus ----
-export async function getSubmissionStatus(
-  poolId: string,
-  userId: string
-): Promise<Submission | null> {
-  const { data } = await supabase
-    .from('submissions')
-    .select('*')
-    .eq('pool_id', poolId)
-    .eq('user_id', userId)
+    .upsert(payload, {
+      onConflict: 'pool_id,user_id',
+    })
+    .select()
     .single();
 
-  return data as Submission | null;
-}
-
-// ---- toPredictionMap ----
-export function toPredictionMap(predictions: Prediction[]): PredictionMap {
-  return predictions.reduce<PredictionMap>((acc, p) => {
-    acc[p.match_id] = { home: p.home_score, away: p.away_score };
-    return acc;
-  }, {});
+  if (error) throw error;
+  return data;
 }
