@@ -25,12 +25,20 @@ export async function createPool(
     return { pool: null, error: error?.message ?? 'Failed to create pool.' };
   }
 
-  // Add admin as member
-  await supabase.from('pool_members').insert({
+  // Add admin as member. If this fails, rollback the pool so state stays consistent.
+  const { error: memberError } = await supabase.from('pool_members').insert({
     pool_id: pool.id,
     user_id: adminId,
     role: 'admin',
   });
+
+  if (memberError) {
+    await supabase.from('pools').delete().eq('id', pool.id);
+    return {
+      pool: null,
+      error: `Pool created but membership setup failed: ${memberError.message}`,
+    };
+  }
 
   return { pool: pool as Pool, error: null };
 }
