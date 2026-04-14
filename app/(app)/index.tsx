@@ -23,7 +23,6 @@ import type { Pool, Submission } from '@/types';
 
 export default function HomeScreen() {
   const router = useRouter();
-  @@ -26,77 +26,93 @@ export default function HomeScreen() {
   const { user, profile, entitlement } = useAuthStore();
   const { pools, loading, fetchPools, setCurrentPool } = usePool();
 
