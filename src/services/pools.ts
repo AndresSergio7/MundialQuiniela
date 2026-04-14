@@ -11,12 +11,18 @@ export async function createPool(
   name: string
 ): Promise<{ pool: Pool | null; error: string | null }> {
   // Verify entitlement
-  const { data: ent } = await supabase
+  const { data: ent, error: entError } = await supabase
     .from('entitlements')
     .select('has_app_access, total_slots')
     .eq('user_id', adminId)
     .is('pool_id', null)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (entError) {
+    return { pool: null, error: 'Unable to verify app access. Please try again.' };
+  }
 
   if (!ent?.has_app_access) {
     return { pool: null, error: 'Purchase required to create a pool.' };

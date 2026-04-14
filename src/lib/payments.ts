@@ -176,7 +176,9 @@ async function grantEntitlement(
     .select('*')
     .eq('user_id', userId)
     .is('pool_id', poolId)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (existing) {
     await supabase
@@ -224,7 +226,9 @@ export async function checkEntitlement(userId: string): Promise<boolean> {
     .select('has_app_access')
     .eq('user_id', userId)
     .is('pool_id', null)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   return data?.has_app_access ?? false;
 }
