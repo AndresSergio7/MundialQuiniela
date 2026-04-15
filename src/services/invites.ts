@@ -35,22 +35,78 @@ export async function generateInviteLink(
 }
 
 // ---- joinViaInvite ----
-// Calls the SECURITY DEFINER RPC which bypasses RLS on the pools table
+// Primary path: SECURITY DEFINER RPC that bypasses RLS on the pools table
 // so non-members can validate the invite token and join atomically.
+// Fallback: direct queries (works when pools table allows authenticated reads).
 export async function joinViaInvite(
   _userId: string,
   poolId: string,
   token: string
 ): Promise<{ success: boolean; error: string | null }> {
-  const { data, error } = await supabase.rpc('join_pool_via_invite', {
+  // Try the RPC first (created via migration; SECURITY DEFINER bypasses RLS)
+  const { data, error: rpcError } = await supabase.rpc('join_pool_via_invite', {
     p_pool_id: poolId,
     p_token: token,
   });
 
-  if (error) return { success: false, error: error.message };
+  // If RPC is in the schema cache, trust its result (success or domain error)
+  if (!rpcError) {
+    return data as { success: boolean; error: string | null };
+  }
 
-  const result = data as { success: boolean; error: string | null };
-  return result;
+  // RPC not yet in PostgREST schema cache (can lag a few minutes after migration).
+  // Fall back to direct queries — requires pools table to be readable by
+  // authenticated users, which is the case when RLS allows member-based SELECT.
+  if (!rpcError.message.includes('Could not find the function')) {
+    // A real unexpected error from Supabase infra — surface it.
+    return { success: false, error: rpcError.message };
+  }
+
+  const { data: pool } = await supabase
+    .from('pools')
+    .select('id, invite_token, is_active, max_members')
+    .eq('id', poolId)
+    .maybeSingle();
+
+  if (!pool) {
+    return { success: false, error: 'Pool not found.' };
+  }
+  if (pool.invite_token !== token) {
+    return { success: false, error: 'Invalid invite token.' };
+  }
+  if (!pool.is_active) {
+    return { success: false, error: 'Pool is not active or does not exist.' };
+  }
+
+  const { count } = await supabase
+    .from('pool_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('pool_id', poolId);
+
+  if ((count ?? 0) >= pool.max_members) {
+    return { success: false, error: 'Pool is full.' };
+  }
+
+  const { data: existing } = await supabase
+    .from('pool_members')
+    .select('id')
+    .eq('pool_id', poolId)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle();
+
+  if (existing) {
+    return { success: false, error: 'Already a member of this pool.' };
+  }
+
+  const { data: session } = await supabase.auth.getUser();
+  const uid = session.user?.id;
+  if (!uid) return { success: false, error: 'Not authenticated.' };
+
+  const { error: insertError } = await supabase
+    .from('pool_members')
+    .insert({ pool_id: poolId, user_id: uid, role: 'member' });
+
+  return { success: !insertError, error: insertError?.message ?? null };
 }
 
 // ---- parseInviteLink ----
