@@ -16,8 +16,6 @@ export default function RootLayout() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const { poolId: pendingPoolId, token: pendingToken, clearPendingInvite } =
-    usePendingInviteStore();
 
   // Handle deep links — native only
   useEffect(() => {
@@ -61,14 +59,7 @@ export default function RootLayout() {
 
   // After login: auto-complete any pending invite.
   // Only runs when the user is NOT on the /join screen (join.tsx handles that case).
-  useEffect(() => {
-    if (!user || !pendingPoolId || !pendingToken) return;
-    if (segments[0] === 'join') return; // join.tsx handles it directly
-    joinViaInvite(user.id, pendingPoolId, pendingToken).then(() => {
-      clearPendingInvite();
-      router.replace('/(app)');
-    });
-  }, [user, pendingPoolId, pendingToken, segments]);
+  // Handled in app/(app)/index.tsx so fetchPools() runs immediately after joining.
 
   // Route guard
   useEffect(() => {

@@ -11,7 +11,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePool } from '@/hooks/usePool';
+import { usePendingInviteStore } from '@/store/pendingInvite';
 import { createPool } from '@/services/pools';
+import { joinViaInvite } from '@/services/invites';
 import { getSubmissionStatus } from '@/services/predictions';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -23,6 +25,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, profile, entitlement } = useAuthStore();
   const { pools, loading, fetchPools, setCurrentPool } = usePool();
+  const { poolId: pendingPoolId, token: pendingToken, clearPendingInvite } =
+    usePendingInviteStore();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [poolName, setPoolName] = useState('');
@@ -30,7 +34,19 @@ export default function HomeScreen() {
   const [createError, setCreateError] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
 
-  useEffect(() => { fetchPools(); }, []);
+  // On mount: complete any pending invite from a pre-login invite link click,
+  // then refresh the pool list so the new pool appears immediately.
+  useEffect(() => {
+    async function init() {
+      if (user && pendingPoolId && pendingToken) {
+        await joinViaInvite(user.id, pendingPoolId, pendingToken);
+        clearPendingInvite();
+      }
+      fetchPools();
+    }
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!user || !pools.length) return;
