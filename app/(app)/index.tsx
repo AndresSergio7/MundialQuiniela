@@ -67,6 +67,8 @@ export default function HomeScreen() {
     loadSubs();
   }, [pools, user]);
 
+  // "Crear Quiniela" / "+ New Pool": go to purchase to buy+name in one flow.
+  // If the user already has an unused entitlement, show the name modal directly.
   function openCreateModal() {
     if (!entitlement?.has_app_access) {
       router.push('/(app)/purchase');
@@ -171,21 +173,20 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>My Pools</Text>
           <TouchableOpacity onPress={openCreateModal}>
-            <Text style={styles.createBtn}>+ New Pool</Text>
+            <Text style={styles.createBtn}>+ Nueva</Text>
           </TouchableOpacity>
         </View>
 
         {pools.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No pools yet.</Text>
+            <Ionicons name="trophy-outline" size={48} color={colors.primary} style={{ marginBottom: spacing.md }} />
+            <Text style={styles.emptyText}>Sin quinielas aún</Text>
             <Text style={styles.emptySubText}>
-              {hasAccess
-                ? 'Create a pool or join one via an invite link.'
-                : 'Get access to create a pool.'}
+              Crea tu propia quiniela o únete a una con un link de invitación.
             </Text>
             <Button
-              title={hasAccess ? 'Create Pool' : 'Get Access'}
-              onPress={hasAccess ? openCreateModal : () => router.push('/(app)/purchase')}
+              title="Crear Quiniela"
+              onPress={() => router.push('/(app)/purchase')}
               style={{ marginTop: spacing.md }}
             />
           </Card>
@@ -235,7 +236,7 @@ export default function HomeScreen() {
       <Modal visible={showCreateModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create New Pool</Text>
+            <Text style={styles.modalTitle}>Nueva Quiniela</Text>
 
             {createError ? (
               <View style={styles.errorBanner}>
@@ -247,7 +248,7 @@ export default function HomeScreen() {
               label="Pool Name"
               value={poolName}
               onChangeText={(t) => { setPoolName(t); setCreateError(''); }}
-              placeholder="Mi Quiniela 2026"
+              placeholder="Ej. Mi Quiniela 2026"
               autoFocus
             />
             <View style={styles.modalButtons}>
