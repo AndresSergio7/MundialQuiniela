@@ -5,7 +5,6 @@
 // ============================================================
 
 import { supabase } from '@/lib/supabase';
-import { joinPool } from './pools';
 
 export const INVITE_WEB_BASE = 'https://mundial-quiniela-ruddy.vercel.app';
 
@@ -36,24 +35,22 @@ export async function generateInviteLink(
 }
 
 // ---- joinViaInvite ----
-// Validates token against pool.invite_token, then joins the pool.
+// Calls the SECURITY DEFINER RPC which bypasses RLS on the pools table
+// so non-members can validate the invite token and join atomically.
 export async function joinViaInvite(
-  userId: string,
+  _userId: string,
   poolId: string,
   token: string
 ): Promise<{ success: boolean; error: string | null }> {
-  const { data: pool } = await supabase
-    .from('pools')
-    .select('id, invite_token, is_active, max_members, name')
-    .eq('id', poolId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('join_pool_via_invite', {
+    p_pool_id: poolId,
+    p_token: token,
+  });
 
-  if (!pool) return { success: false, error: 'Pool not found.' };
-  if (pool.invite_token !== token) return { success: false, error: 'Invalid invite token.' };
-  if (!pool.is_active) return { success: false, error: 'This pool is no longer active.' };
+  if (error) return { success: false, error: error.message };
 
-  // joinPool handles capacity and duplicate-member checks
-  return joinPool(userId, poolId);
+  const result = data as { success: boolean; error: string | null };
+  return result;
 }
 
 // ---- parseInviteLink ----

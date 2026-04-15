@@ -44,7 +44,9 @@ export default function RootLayout() {
     return () => sub?.remove();
   }, [user]);
 
-  // Handle web invite via query string on initial load
+  // Handle web invite via query string on initial load.
+  // Only store the pending invite if the user is NOT logged in — if they are,
+  // join.tsx reads the params directly and handles the join itself.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     if (typeof window === 'undefined') return;
@@ -52,21 +54,21 @@ export default function RootLayout() {
     const poolId = params.get('pool');
     const token = params.get('token');
     const path = window.location.pathname;
-    if (poolId && token && path === '/join') {
-      // Join screen will handle this; just ensure params are preserved
+    if (poolId && token && path === '/join' && !user) {
       usePendingInviteStore.getState().setPendingInvite(poolId, token);
     }
   }, []);
 
-  // After login: auto-complete any pending invite
+  // After login: auto-complete any pending invite.
+  // Only runs when the user is NOT on the /join screen (join.tsx handles that case).
   useEffect(() => {
     if (!user || !pendingPoolId || !pendingToken) return;
-    joinViaInvite(user.id, pendingPoolId, pendingToken).then(({ success }) => {
+    if (segments[0] === 'join') return; // join.tsx handles it directly
+    joinViaInvite(user.id, pendingPoolId, pendingToken).then(() => {
       clearPendingInvite();
-      // Redirect to app regardless (joinPool handles "already a member")
       router.replace('/(app)');
     });
-  }, [user, pendingPoolId, pendingToken]);
+  }, [user, pendingPoolId, pendingToken, segments]);
 
   // Route guard
   useEffect(() => {
