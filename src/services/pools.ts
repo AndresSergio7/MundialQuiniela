@@ -97,7 +97,51 @@ export async function joinPool(
   return { success: !error, error: error?.message ?? null };
 }
 
-// ---- removeMember ----
+// ---- deletePool ----
+// Admin only: permanently deletes the pool and all associated data.
+export async function deletePool(
+  adminId: string,
+  poolId: string
+): Promise<{ error: string | null }> {
+  const { data: pool } = await supabase
+    .from('pools')
+    .select('admin_id')
+    .eq('id', poolId)
+    .maybeSingle();
+
+  if (!pool) return { error: 'Pool not found.' };
+  if (pool.admin_id !== adminId) return { error: 'Only the admin can delete this pool.' };
+
+  const { error } = await supabase.from('pools').delete().eq('id', poolId);
+  return { error: error?.message ?? null };
+}
+
+// ---- leavePool ----
+// Member only: removes the user from the pool (does not delete it).
+export async function leavePool(
+  userId: string,
+  poolId: string
+): Promise<{ error: string | null }> {
+  const { data: member } = await supabase
+    .from('pool_members')
+    .select('role')
+    .eq('pool_id', poolId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!member) return { error: 'You are not a member of this pool.' };
+  if (member.role === 'admin') return { error: 'Admins cannot leave their own pool. Delete it instead.' };
+
+  const { error } = await supabase
+    .from('pool_members')
+    .delete()
+    .eq('pool_id', poolId)
+    .eq('user_id', userId);
+
+  return { error: error?.message ?? null };
+}
+
+
 export async function removeMember(
   adminId: string,
   poolId: string,
