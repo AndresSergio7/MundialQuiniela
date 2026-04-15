@@ -99,10 +99,26 @@ export async function joinPool(
 
 // ---- deletePool ----
 // Admin only: permanently deletes the pool and all associated data.
+// Uses SECURITY DEFINER RPC to bypass RLS; falls back to direct query.
 export async function deletePool(
   adminId: string,
   poolId: string
 ): Promise<{ error: string | null }> {
+  // Try RPC first (SECURITY DEFINER bypasses RLS)
+  const { data: rpcData, error: rpcError } = await supabase.rpc('delete_pool', {
+    p_pool_id: poolId,
+  });
+
+  if (!rpcError) {
+    const result = rpcData as { success: boolean; error: string | null };
+    return { error: result.error };
+  }
+
+  // Fallback: direct delete (requires RLS DELETE policy for admin)
+  if (!rpcError.message.includes('Could not find the function')) {
+    return { error: rpcError.message };
+  }
+
   const { data: pool } = await supabase
     .from('pools')
     .select('admin_id')
@@ -112,16 +128,41 @@ export async function deletePool(
   if (!pool) return { error: 'Pool not found.' };
   if (pool.admin_id !== adminId) return { error: 'Only the admin can delete this pool.' };
 
-  const { error } = await supabase.from('pools').delete().eq('id', poolId);
-  return { error: error?.message ?? null };
+  const { data: deleted, error } = await supabase
+    .from('pools')
+    .delete()
+    .eq('id', poolId)
+    .select('id');
+
+  if (error) return { error: error.message };
+  if (!deleted || deleted.length === 0) {
+    return { error: 'No se pudo eliminar el pool. Ejecuta el SQL de permisos en tu proyecto Supabase.' };
+  }
+  return { error: null };
 }
 
 // ---- leavePool ----
 // Member only: removes the user from the pool (does not delete it).
+// Uses SECURITY DEFINER RPC to bypass RLS; falls back to direct query.
 export async function leavePool(
   userId: string,
   poolId: string
 ): Promise<{ error: string | null }> {
+  // Try RPC first
+  const { data: rpcData, error: rpcError } = await supabase.rpc('leave_pool', {
+    p_pool_id: poolId,
+  });
+
+  if (!rpcError) {
+    const result = rpcData as { success: boolean; error: string | null };
+    return { error: result.error };
+  }
+
+  if (!rpcError.message.includes('Could not find the function')) {
+    return { error: rpcError.message };
+  }
+
+  // Fallback
   const { data: member } = await supabase
     .from('pool_members')
     .select('role')
@@ -132,13 +173,18 @@ export async function leavePool(
   if (!member) return { error: 'You are not a member of this pool.' };
   if (member.role === 'admin') return { error: 'Admins cannot leave their own pool. Delete it instead.' };
 
-  const { error } = await supabase
+  const { data: deleted, error } = await supabase
     .from('pool_members')
     .delete()
     .eq('pool_id', poolId)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('id');
 
-  return { error: error?.message ?? null };
+  if (error) return { error: error.message };
+  if (!deleted || deleted.length === 0) {
+    return { error: 'No se pudo salir del pool. Ejecuta el SQL de permisos en tu proyecto Supabase.' };
+  }
+  return { error: null };
 }
 
 
