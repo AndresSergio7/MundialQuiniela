@@ -13,13 +13,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { usePool } from '@/hooks/usePool';
-import { generateInviteLink, getActiveInvites } from '@/services/invites';
+import { generateInviteLink } from '@/services/invites';
 import { removeMember } from '@/services/pools';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
-import type { PoolMember, Invite, Pool } from '@/types';
+import type { PoolMember, Pool } from '@/types';
 
 export default function InvitesScreen() {
   const { user } = useAuthStore();
@@ -27,9 +27,8 @@ export default function InvitesScreen() {
   const { fetchMembers } = usePool();
 
   const [members, setMembers] = useState<PoolMember[]>([]);
-  const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -43,12 +42,8 @@ export default function InvitesScreen() {
     if (!activePool) return;
     setLoading(true);
     setError(null);
-    const [m, i] = await Promise.all([
-      fetchMembers(activePool.id),
-      getActiveInvites(activePool.id),
-    ]);
+    const m = await fetchMembers(activePool.id);
     setMembers(m);
-    setInvites(i);
     setLoading(false);
   }
 
@@ -57,34 +52,34 @@ export default function InvitesScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPool?.id]);
 
-  async function handleGenerateInvite() {
+  async function handleShare() {
     if (!user || !currentPool) return;
-    setGenerating(true);
+    setSharing(true);
     setError(null);
     setShareSuccess(false);
 
     const { link, error: linkError } = await generateInviteLink(user.id, currentPool.id);
-    setGenerating(false);
+    setSharing(false);
 
     if (linkError || !link) {
       setError(linkError ?? 'Failed to generate invite link.');
       return;
     }
 
-    const message = `Join my World Cup 2026 pool "${currentPool.name}"!\n\n${link}`;
+    const message =
+      `Join my World Cup 2026 pool "${currentPool.name}"!\n` +
+      `Use this link to join:\n${link}`;
 
     if (Platform.OS === 'web') {
-      // Web: try native share API, fall back to clipboard
       if (typeof navigator !== 'undefined' && navigator.share) {
         try {
           await navigator.share({ title: `Join "${currentPool.name}"`, text: message, url: link });
           setShareSuccess(true);
         } catch {
-          // User cancelled or not supported — try clipboard
-          await copyToClipboard(link, message);
+          await copyToClipboard(message, link);
         }
       } else {
-        await copyToClipboard(link, message);
+        await copyToClipboard(message, link);
       }
     } else {
       try {
@@ -94,11 +89,9 @@ export default function InvitesScreen() {
         setError('Could not open share sheet.');
       }
     }
-
-    await loadData();
   }
 
-  async function copyToClipboard(link: string, message: string) {
+  async function copyToClipboard(message: string, link: string) {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(message);
@@ -137,25 +130,17 @@ export default function InvitesScreen() {
     <View style={styles.screen}>
       <PoolSelectorBar onPoolChange={(pool) => loadData(pool)} />
 
-      {/* Invite card */}
+      {/* Invite card — admin only */}
       {isAdmin && (
         <Card style={styles.inviteCard}>
           <Text style={styles.inviteCardTitle}>Invite Members</Text>
           <Text style={styles.inviteCardSub}>
-            Share a link valid for 7 days. Pool supports up to {currentPool.max_members} members.
+            Share a reusable invite link. Pool supports up to {currentPool.max_members} members.
           </Text>
 
           {error && (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {shareSuccess && (
-            <View style={styles.successBanner}>
-              <Text style={styles.successText}>
-                {Platform.OS === 'web' ? 'Link copied to clipboard!' : 'Invite shared!'}
-              </Text>
             </View>
           )}
 
@@ -165,10 +150,18 @@ export default function InvitesScreen() {
             </View>
           )}
 
+          {shareSuccess && (
+            <View style={styles.successBanner}>
+              <Text style={styles.successText}>
+                {Platform.OS === 'web' ? 'Invite copied to clipboard!' : 'Invite shared!'}
+              </Text>
+            </View>
+          )}
+
           <Button
-            title={generating ? 'Generating...' : 'Generate & Share Invite'}
-            onPress={handleGenerateInvite}
-            loading={generating}
+            title={sharing ? 'Preparing…' : 'Share Invite Link'}
+            onPress={handleShare}
+            loading={sharing}
             style={{ marginTop: spacing.md }}
           />
         </Card>
@@ -212,9 +205,9 @@ export default function InvitesScreen() {
                     <Ionicons name="person" size={20} color={colors.primary} />
                   ) : isAdmin ? (
                     <TouchableOpacity
-                      onPress={() => setConfirmRemoveId(
-                        isPendingRemove ? null : member.user_id
-                      )}
+                      onPress={() =>
+                        setConfirmRemoveId(isPendingRemove ? null : member.user_id)
+                      }
                     >
                       <Ionicons
                         name={isPendingRemove ? 'chevron-up' : 'close-circle'}
@@ -244,7 +237,7 @@ export default function InvitesScreen() {
                         disabled={isRemoving}
                       >
                         <Text style={styles.confirmRemoveText}>
-                          {isRemoving ? 'Removing...' : 'Remove'}
+                          {isRemoving ? 'Removing…' : 'Remove'}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -253,28 +246,6 @@ export default function InvitesScreen() {
               </Card>
             );
           }}
-          ListFooterComponent={
-            invites.length > 0 ? (
-              <View style={{ marginTop: spacing.lg }}>
-                <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>
-                  Active Invite Links ({invites.length})
-                </Text>
-                {invites.map((inv) => (
-                  <Card key={inv.id} style={styles.inviteItem}>
-                    <Text style={styles.inviteToken} numberOfLines={1}>
-                      Token: {inv.token.slice(0, 16)}…
-                    </Text>
-                    <Text style={styles.inviteExpiry}>
-                      Expires: {new Date(inv.expires_at).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.inviteUsed, inv.used_by ? styles.inviteUsedDone : styles.inviteUsedAvail]}>
-                      {inv.used_by ? 'Used' : 'Available'}
-                    </Text>
-                  </Card>
-                ))}
-              </View>
-            ) : null
-          }
         />
       )}
     </View>
@@ -356,10 +327,4 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   confirmRemoveText: { ...typography.caption, color: '#fff', fontWeight: '600' },
-  inviteItem: { marginBottom: spacing.sm },
-  inviteToken: { ...typography.caption, color: colors.text, fontFamily: 'monospace' },
-  inviteExpiry: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-  inviteUsed: { ...typography.caption, marginTop: 2 },
-  inviteUsedAvail: { color: colors.success },
-  inviteUsedDone: { color: colors.textMuted },
 });

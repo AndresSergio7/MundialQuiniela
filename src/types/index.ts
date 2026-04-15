@@ -190,23 +190,58 @@ export interface Scoreline {
   key: string;
 }
 
-// ---- Product IDs ----
-export const PRODUCT_IDS = {
-  APP_ACCESS: {
-    ios: 'com.mundialquiniela.app.access',
-    android: 'com.mundialquiniela.app.access',
+// ---- Pool Plans (in-app purchase tiers) ----
+export const POOL_PLANS = [
+  {
+    id: 'com.mundialquiniela.pool.10',
+    slots: 10,
+    priceCents: 499,
+    priceLabel: '$4.99',
+    label: '10 members',
   },
-  EXTRA_SLOTS: {
-    ios: 'com.mundialquiniela.extra.slots',
-    android: 'com.mundialquiniela.extra.slots',
+  {
+    id: 'com.mundialquiniela.pool.25',
+    slots: 25,
+    priceCents: 799,
+    priceLabel: '$7.99',
+    label: '25 members',
   },
-} as const;
+  {
+    id: 'com.mundialquiniela.pool.50',
+    slots: 50,
+    priceCents: 1199,
+    priceLabel: '$11.99',
+    label: '50 members',
+  },
+  {
+    id: 'com.mundialquiniela.pool.100',
+    slots: 100,
+    priceCents: 1999,
+    priceLabel: '$19.99',
+    label: '100 members',
+  },
+] as const;
 
-export const PRICES = {
-  APP_ACCESS_CENTS: 500,     // $5
-  EXTRA_SLOTS_CENTS: 500,    // $5 per user
-  BASE_SLOTS: 10,
-  EXTRA_SLOTS_BUNDLE: 1,
+export type PoolPlanId = typeof POOL_PLANS[number]['id'];
+
+// ---- Product IDs (legacy / native IAP sku list) ----
+export const PRODUCT_IDS = {
+  POOL_10: {
+    ios: 'com.mundialquiniela.pool.10',
+    android: 'com.mundialquiniela.pool.10',
+  },
+  POOL_25: {
+    ios: 'com.mundialquiniela.pool.25',
+    android: 'com.mundialquiniela.pool.25',
+  },
+  POOL_50: {
+    ios: 'com.mundialquiniela.pool.50',
+    android: 'com.mundialquiniela.pool.50',
+  },
+  POOL_100: {
+    ios: 'com.mundialquiniela.pool.100',
+    android: 'com.mundialquiniela.pool.100',
+  },
 } as const;
 
 // ---- API ----

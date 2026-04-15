@@ -6,12 +6,17 @@ export async function createPool(
   adminId: string,
   name: string
 ): Promise<{ pool: Pool | null; error: string | null }> {
-  // Check entitlement — use maybeSingle (no error if row missing)
+  // Find the oldest unused purchase (pool_id IS NULL, has_app_access = true).
+  // PostgreSQL allows multiple NULL rows in a UNIQUE(user_id, pool_id) constraint
+  // because each NULL is considered distinct from the others.
   const { data: ent } = await supabase
     .from('entitlements')
-    .select('has_app_access, total_slots')
+    .select('id, has_app_access, base_slots')
     .eq('user_id', adminId)
     .is('pool_id', null)
+    .eq('has_app_access', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (!ent?.has_app_access) {
@@ -23,7 +28,7 @@ export async function createPool(
     .insert({
       name,
       admin_id: adminId,
-      max_members: ent.total_slots ?? 10,
+      max_members: ent.base_slots,
     })
     .select()
     .single();
@@ -39,17 +44,11 @@ export async function createPool(
     role: 'admin',
   });
 
-  // Create pool-level entitlement
-  await supabase.from('entitlements').upsert(
-    {
-      user_id: adminId,
-      pool_id: pool.id,
-      has_app_access: true,
-      base_slots: 10,
-      extra_slots: 0,
-    },
-    { onConflict: 'user_id,pool_id' }
-  );
+  // Consume the entitlement by binding it to the new pool
+  await supabase
+    .from('entitlements')
+    .update({ pool_id: pool.id, updated_at: new Date().toISOString() })
+    .eq('id', ent.id);
 
   return { pool: pool as Pool, error: null };
 }

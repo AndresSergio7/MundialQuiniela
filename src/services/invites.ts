@@ -1,105 +1,71 @@
 // ============================================================
-// INVITE SERVICE
+// INVITE SERVICE — V1
+// Uses pool.invite_token (1 reusable token per pool).
+// Capacity enforced by pool.max_members + member count.
 // ============================================================
 
 import { supabase } from '@/lib/supabase';
 import { joinPool } from './pools';
-import type { Invite } from '@/types';
-import * as Crypto from 'expo-crypto';
 
-const INVITE_DEEP_LINK_BASE = 'mundialquiniela://join';
+export const INVITE_WEB_BASE = 'https://mundial-quiniela-ruddy.vercel.app';
+
+// Build the invite link for a pool using its invite_token
+export function buildInviteLink(poolId: string, token: string): string {
+  return `${INVITE_WEB_BASE}/join?pool=${poolId}&token=${token}`;
+}
 
 // ---- generateInviteLink ----
+// Returns the reusable invite URL for a pool. Does NOT modify the DB.
 export async function generateInviteLink(
   adminId: string,
   poolId: string
-): Promise<{ link: string | null; invite: Invite | null; error: string | null }> {
-  // Verify caller is admin
+): Promise<{ link: string | null; error: string | null }> {
   const { data: pool } = await supabase
     .from('pools')
-    .select('admin_id, invite_token')
+    .select('admin_id, invite_token, name')
     .eq('id', poolId)
-    .single();
+    .maybeSingle();
 
-  if (!pool) return { link: null, invite: null, error: 'Pool not found.' };
+  if (!pool) return { link: null, error: 'Pool not found.' };
   if (pool.admin_id !== adminId) {
-    return { link: null, invite: null, error: 'Only admin can generate invites.' };
+    return { link: null, error: 'Only the pool admin can share invites.' };
   }
 
-  // Generate unique token
-  const bytes = await Crypto.getRandomBytesAsync(16);
-  const token = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  const { data: invite, error } = await supabase
-    .from('invites')
-    .insert({
-      pool_id: poolId,
-      token,
-      created_by: adminId,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error || !invite) {
-    return { link: null, invite: null, error: error?.message ?? 'Failed to create invite.' };
-  }
-
-  const link = `${INVITE_DEEP_LINK_BASE}?pool=${poolId}&token=${token}`;
-  return { link, invite: invite as Invite, error: null };
+  const link = buildInviteLink(poolId, pool.invite_token);
+  return { link, error: null };
 }
 
 // ---- joinViaInvite ----
+// Validates token against pool.invite_token, then joins the pool.
 export async function joinViaInvite(
   userId: string,
   poolId: string,
   token: string
 ): Promise<{ success: boolean; error: string | null }> {
-  // Validate invite
-  const { data: invite } = await supabase
-    .from('invites')
-    .select('*')
-    .eq('pool_id', poolId)
-    .eq('token', token)
-    .is('used_by', null)
-    .gt('expires_at', new Date().toISOString())
-    .single();
+  const { data: pool } = await supabase
+    .from('pools')
+    .select('id, invite_token, is_active, max_members, name')
+    .eq('id', poolId)
+    .maybeSingle();
 
-  if (!invite) {
-    return { success: false, error: 'Invalid or expired invite link.' };
-  }
+  if (!pool) return { success: false, error: 'Pool not found.' };
+  if (pool.invite_token !== token) return { success: false, error: 'Invalid invite token.' };
+  if (!pool.is_active) return { success: false, error: 'This pool is no longer active.' };
 
-  // Join pool
-  const { success, error } = await joinPool(userId, poolId);
-  if (!success) return { success: false, error };
-
-  // Mark invite as used
-  await supabase
-    .from('invites')
-    .update({ used_by: userId, used_at: new Date().toISOString() })
-    .eq('id', invite.id);
-
-  return { success: true, error: null };
+  // joinPool handles capacity and duplicate-member checks
+  return joinPool(userId, poolId);
 }
 
-// ---- getActiveInvites ----
-export async function getActiveInvites(poolId: string): Promise<Invite[]> {
-  const { data } = await supabase
-    .from('invites')
-    .select('*')
-    .eq('pool_id', poolId)
-    .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false });
-
-  return (data ?? []) as Invite[];
-}
-
-// ---- resolveInviteFromDeepLink ----
+// ---- parseInviteLink ----
+// Parses both the new web URL and the legacy deep-link format.
 export function parseInviteLink(url: string): { poolId: string; token: string } | null {
   try {
-    const parsed = new URL(url.replace('mundialquiniela://', 'https://mundialquiniela.app/'));
+    // Normalise legacy deep link so URL constructor can parse it
+    const normalised = url.startsWith('mundialquiniela://')
+      ? url.replace('mundialquiniela://join', `${INVITE_WEB_BASE}/join`)
+      : url;
+
+    const parsed = new URL(normalised);
     const poolId = parsed.searchParams.get('pool');
     const token = parsed.searchParams.get('token');
     if (!poolId || !token) return null;

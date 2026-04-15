@@ -1,26 +1,17 @@
 // ============================================================
-// PAYMENT STRUCTURE
+// PAYMENT STRUCTURE — Native (iOS / Android)
 // iOS: StoreKit via react-native-iap
 // Android: Google Play Billing via react-native-iap
-// Backend: Supabase receipt validation (structured/mocked)
 // ============================================================
 
 import { Platform } from 'react-native';
 import * as IAP from 'react-native-iap';
 import { supabase } from './supabase';
-import type { Payment, PaymentType, PRICES } from '@/types';
-import { PRODUCT_IDS } from '@/types';
+import { POOL_PLANS } from '@/types';
+import type { PoolPlanId, Payment } from '@/types';
 
-// ---- Product definitions ----
-const IOS_PRODUCTS = [
-  PRODUCT_IDS.APP_ACCESS.ios,
-  PRODUCT_IDS.EXTRA_SLOTS.ios,
-];
-
-const ANDROID_PRODUCTS = [
-  PRODUCT_IDS.APP_ACCESS.android,
-  PRODUCT_IDS.EXTRA_SLOTS.android,
-];
+// All purchasable SKUs
+const ALL_SKUS = POOL_PLANS.map((p) => p.id);
 
 // ---- Initialize IAP connection ----
 export async function initIAP(): Promise<boolean> {
@@ -36,58 +27,24 @@ export async function initIAP(): Promise<boolean> {
 // ---- Fetch products from store ----
 export async function getProducts(): Promise<IAP.Product[]> {
   try {
-    const productIds = Platform.OS === 'ios' ? IOS_PRODUCTS : ANDROID_PRODUCTS;
-    return await IAP.getProducts({ skus: productIds });
+    return await IAP.getProducts({ skus: ALL_SKUS });
   } catch (err) {
     console.warn('Failed to fetch products:', err);
     return [];
   }
 }
 
-// ---- Purchase app access ($5) ----
-export async function purchaseAppAccess(userId: string): Promise<boolean> {
-  const productId =
-    Platform.OS === 'ios'
-      ? PRODUCT_IDS.APP_ACCESS.ios
-      : PRODUCT_IDS.APP_ACCESS.android;
-
-  return await requestPurchase(userId, productId, 'app_access', 500, 0);
-}
-
-// ---- Purchase extra member slots ($5 per user) ----
-export async function purchaseExtraSlots(
+// ---- Purchase a pool plan ----
+export async function purchasePoolPlan(
   userId: string,
-  poolId: string,
-  quantity: number
+  planId: PoolPlanId
 ): Promise<boolean> {
-  const productId =
-    Platform.OS === 'ios'
-      ? PRODUCT_IDS.EXTRA_SLOTS.ios
-      : PRODUCT_IDS.EXTRA_SLOTS.android;
+  const plan = POOL_PLANS.find((p) => p.id === planId);
+  if (!plan) return false;
 
-  return await requestPurchase(
-    userId,
-    productId,
-    'extra_slots',
-    500 * quantity,
-    quantity,
-    poolId
-  );
-}
-
-// ---- Core purchase flow ----
-async function requestPurchase(
-  userId: string,
-  productId: string,
-  paymentType: PaymentType,
-  amountCents: number,
-  slots: number,
-  poolId?: string
-): Promise<boolean> {
   try {
-    const purchase = await IAP.requestPurchase({ sku: productId });
+    const purchase = await IAP.requestPurchase({ sku: planId });
 
-    // Extract receipt/transaction info
     const transactionId =
       (purchase as IAP.ProductPurchase).transactionId ??
       `mock_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -97,59 +54,52 @@ async function requestPurchase(
         ? (purchase as IAP.ProductPurchase).transactionReceipt
         : (purchase as IAP.ProductPurchase).purchaseToken;
 
-    // Save payment record
     const { data: payment, error } = await supabase
       .from('payments')
       .insert({
         user_id: userId,
-        pool_id: poolId ?? null,
-        amount_cents: amountCents,
+        amount_cents: plan.priceCents,
         currency: 'USD',
         platform: Platform.OS as 'ios' | 'android',
-        product_id: productId,
+        product_id: planId,
         transaction_id: transactionId,
         receipt_data: receiptData ?? null,
         status: 'pending',
-        payment_type: paymentType,
-        slots_purchased: slots,
+        payment_type: 'app_access',
+        slots_purchased: plan.slots,
       })
       .select()
       .single();
 
-    if (error || !payment) throw new Error('Failed to save payment');
+    if (error || !payment) throw new Error('Failed to save payment record');
 
-    // Validate receipt
     const verified = await validateReceipt(payment as Payment);
     if (verified) {
-      await grantEntitlement(userId, poolId ?? null, paymentType, slots);
+      // Grant one unused pool-creation entitlement
+      await supabase.from('entitlements').insert({
+        user_id: userId,
+        pool_id: null,
+        has_app_access: true,
+        base_slots: plan.slots,
+        extra_slots: 0,
+      });
       await IAP.finishTransaction({ purchase: purchase as IAP.ProductPurchase });
       return true;
     }
 
     return false;
   } catch (err) {
-    console.error('Purchase failed:', err);
+    console.error('purchasePoolPlan error:', err);
     return false;
   }
 }
 
-// ---- Backend receipt validation (mocked but structured) ----
+// ---- Backend receipt validation (structured, mock for MVP) ----
 async function validateReceipt(payment: Payment): Promise<boolean> {
   try {
-    // In production: call your backend validation endpoint
-    // POST /api/validate-receipt
-    // { platform, receipt_data, transaction_id, product_id }
-    //
-    // iOS: call Apple /verifyReceipt endpoint
-    // Android: call Google Play Developer API
-    //
-    // For MVP: mock validation (always succeeds for real transactions)
-    const isMock = payment.transaction_id.startsWith('mock_');
+    // Production: call POST /api/validate-receipt with receipt_data
+    const isValid = true; // Replace with real Apple/Google validation
 
-    // Simulate validation
-    const isValid = true; // Replace with real API call
-
-    // Update payment status
     await supabase
       .from('payments')
       .update({
@@ -164,57 +114,27 @@ async function validateReceipt(payment: Payment): Promise<boolean> {
   }
 }
 
-// ---- Grant entitlement after successful payment ----
-async function grantEntitlement(
-  userId: string,
-  poolId: string | null,
-  paymentType: PaymentType,
-  extraSlots: number
-): Promise<void> {
-  const { data: existing } = await supabase
-    .from('entitlements')
-    .select('*')
-    .eq('user_id', userId)
-    .is('pool_id', poolId)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    await supabase
-      .from('entitlements')
-      .update({
-        has_app_access: paymentType === 'app_access' ? true : existing.has_app_access,
-        extra_slots: existing.extra_slots + extraSlots,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', existing.id);
-  } else {
-    await supabase.from('entitlements').insert({
-      user_id: userId,
-      pool_id: poolId,
-      has_app_access: paymentType === 'app_access',
-      base_slots: 10,
-      extra_slots: extraSlots,
-    });
-  }
-}
-
 // ---- Restore purchases ----
 export async function restorePurchases(userId: string): Promise<boolean> {
   try {
     const purchases = await IAP.getAvailablePurchases();
 
     for (const purchase of purchases) {
-      if (purchase.productId === PRODUCT_IDS.APP_ACCESS.ios ||
-          purchase.productId === PRODUCT_IDS.APP_ACCESS.android) {
-        await grantEntitlement(userId, null, 'app_access', 0);
-      }
+      const plan = POOL_PLANS.find((p) => p.id === purchase.productId);
+      if (!plan) continue;
+
+      await supabase.from('entitlements').insert({
+        user_id: userId,
+        pool_id: null,
+        has_app_access: true,
+        base_slots: plan.slots,
+        extra_slots: 0,
+      });
     }
 
-    return true;
+    return purchases.length > 0;
   } catch (err) {
-    console.warn('Restore purchases failed:', err);
+    console.warn('restorePurchases failed:', err);
     return false;
   }
 }
@@ -223,12 +143,26 @@ export async function restorePurchases(userId: string): Promise<boolean> {
 export async function checkEntitlement(userId: string): Promise<boolean> {
   const { data } = await supabase
     .from('entitlements')
-    .select('has_app_access')
+    .select('id')
     .eq('user_id', userId)
     .is('pool_id', null)
-    .order('updated_at', { ascending: false })
+    .eq('has_app_access', true)
     .limit(1)
     .maybeSingle();
+  return data != null;
+}
 
-  return data?.has_app_access ?? false;
+// ---- Legacy stubs ----
+/** @deprecated Use purchasePoolPlan instead */
+export async function purchaseAppAccess(userId: string): Promise<boolean> {
+  return purchasePoolPlan(userId, 'com.mundialquiniela.pool.10');
+}
+
+/** @deprecated No longer used in V1 */
+export async function purchaseExtraSlots(
+  _userId: string,
+  _poolId: string,
+  _quantity: number
+): Promise<boolean> {
+  return false;
 }

@@ -70,11 +70,17 @@ export function useAuth() {
 
       if (profileData) setProfile(profileData as Profile);
 
+      // Load the oldest unused purchase (pool_id IS NULL).
+      // Multiple unused purchases are allowed; we load the oldest one so
+      // pool creation will consume it in FIFO order.
       const { data: entitlementData } = await supabase
         .from('entitlements')
         .select('*')
         .eq('user_id', userId)
         .is('pool_id', null)
+        .eq('has_app_access', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
 
       if (entitlementData) setEntitlement(entitlementData as Entitlement);

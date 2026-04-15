@@ -9,72 +9,67 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
-import { usePoolStore } from '@/store/pool';
-import {
-  purchaseAppAccess,
-  purchaseExtraSlots,
-  restorePurchases,
-} from '@/lib/payments';
 import { supabase } from '@/lib/supabase';
+import { purchasePoolPlan, restorePurchases } from '@/lib/payments';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
-import type { Entitlement } from '@/types';
+import { POOL_PLANS } from '@/types';
+import type { PoolPlanId, Entitlement } from '@/types';
+
+const isWeb = Platform.OS === 'web';
 
 export default function PurchaseScreen() {
   const router = useRouter();
-  const { user, entitlement, setEntitlement } = useAuthStore();
-  const { currentPool } = usePoolStore();
+  const { user, setEntitlement } = useAuthStore();
 
-  const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [unusedCount, setUnusedCount] = useState(0);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const hasAccess = entitlement?.has_app_access ?? false;
-  const isWeb = Platform.OS === 'web';
+  useEffect(() => {
+    refreshUnused();
+  }, []);
 
-  async function refreshEntitlement() {
+  async function refreshUnused() {
     if (!user) return;
+    const { count } = await supabase
+      .from('entitlements')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .is('pool_id', null)
+      .eq('has_app_access', true);
+    setUnusedCount(count ?? 0);
+
+    // Also refresh auth store so pool creation screen sees it
     const { data } = await supabase
       .from('entitlements')
       .select('*')
       .eq('user_id', user.id)
       .is('pool_id', null)
+      .eq('has_app_access', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle();
     if (data) setEntitlement(data as Entitlement);
   }
 
-  async function handlePurchaseAccess() {
+  async function handlePurchase(planId: PoolPlanId) {
     if (!user) return;
-    setPurchasing('access');
+    setPurchasing(planId);
     setMessage(null);
 
-    const success = await purchaseAppAccess(user.id);
+    const success = await purchasePoolPlan(user.id, planId);
     setPurchasing(null);
 
     if (success) {
-      await refreshEntitlement();
-      setMessage({ type: 'success', text: 'Access granted! You can now create pools.' });
-    } else {
-      setMessage({ type: 'error', text: 'Purchase failed. Please try again.' });
-    }
-  }
-
-  async function handlePurchaseSlots() {
-    if (!user) return;
-    if (!currentPool) {
-      setMessage({ type: 'error', text: 'Select a pool from Home first.' });
-      return;
-    }
-    setPurchasing('slots');
-    setMessage(null);
-
-    const success = await purchaseExtraSlots(user.id, currentPool.id, 1);
-    setPurchasing(null);
-
-    if (success) {
-      await refreshEntitlement();
-      setMessage({ type: 'success', text: '1 extra member slot added!' });
+      await refreshUnused();
+      const plan = POOL_PLANS.find((p) => p.id === planId);
+      setMessage({
+        type: 'success',
+        text: `Purchase complete! You can now create a pool with up to ${plan?.slots ?? '?'} members.`,
+      });
     } else {
       setMessage({ type: 'error', text: 'Purchase failed. Please try again.' });
     }
@@ -85,34 +80,39 @@ export default function PurchaseScreen() {
     setRestoring(true);
     setMessage(null);
     const success = await restorePurchases(user.id);
-    if (success) {
-      await refreshEntitlement();
-      setMessage({ type: 'success', text: 'Purchases restored.' });
-    } else {
-      setMessage({ type: 'error', text: 'No previous purchases found.' });
-    }
+    await refreshUnused();
+    setMessage(
+      success
+        ? { type: 'success', text: 'Purchases restored.' }
+        : { type: 'error', text: 'No previous purchases found.' }
+    );
     setRestoring(false);
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Get Full Access</Text>
-        <Text style={styles.subtitle}>One-time purchase to join the World Cup pool</Text>
+        <Text style={styles.title}>Create a Pool</Text>
+        <Text style={styles.subtitle}>
+          Each purchase lets you create one pool with the chosen member limit.
+        </Text>
         {isWeb && (
           <View style={styles.webNote}>
-            <Text style={styles.webNoteText}>
-              Demo mode — purchase is simulated on web
-            </Text>
+            <Text style={styles.webNoteText}>Demo mode — purchase is simulated on web</Text>
           </View>
         )}
       </View>
 
       {/* Message banner */}
       {message && (
-        <View style={[styles.messageBanner, message.type === 'success' ? styles.bannerSuccess : styles.bannerError]}>
+        <View
+          style={[
+            styles.messageBanner,
+            message.type === 'success' ? styles.bannerSuccess : styles.bannerError,
+          ]}
+        >
           <Text style={styles.messageText}>{message.text}</Text>
-          {message.type === 'success' && hasAccess && (
+          {message.type === 'success' && (
             <Button
               title="Go to Home"
               variant="outline"
@@ -123,13 +123,17 @@ export default function PurchaseScreen() {
         </View>
       )}
 
-      {/* Access status */}
-      {hasAccess ? (
-        <Card style={styles.activeCard}>
-          <Ionicons name="checkmark-circle" size={40} color={colors.success} />
-          <Text style={styles.activeTitle}>Access Active</Text>
-          <Text style={styles.activeSub}>
-            {entitlement?.total_slots ?? 10} member slots available
+      {/* Unused entitlements summary */}
+      {unusedCount > 0 && (
+        <Card style={styles.entitlementCard}>
+          <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+          <Text style={styles.entitlementTitle}>
+            {unusedCount === 1
+              ? 'You have 1 unused pool creation'
+              : `You have ${unusedCount} unused pool creations`}
+          </Text>
+          <Text style={styles.entitlementSub}>
+            Go to Home to create your pool, or purchase another plan below.
           </Text>
           <Button
             title="Go to Home"
@@ -137,94 +141,90 @@ export default function PurchaseScreen() {
             style={{ marginTop: spacing.md }}
           />
         </Card>
-      ) : (
-        <Card style={styles.pricingCard}>
-          <View style={styles.pricingHeader}>
-            <Text style={styles.pricingTitle}>App Access</Text>
-            <Text style={styles.price}>$5.00</Text>
-          </View>
-          <View style={styles.features}>
-            <Feature text="Create unlimited pools" />
-            <Feature text="Invite up to 10 members" />
-            <Feature text="Submit predictions for all 72 matches" />
-            <Feature text="Live standings & scoring" />
-          </View>
-          <Button
-            title={purchasing === 'access' ? 'Processing...' : isWeb ? 'Get Access — $5 (Demo)' : 'Purchase Access — $5'}
-            onPress={handlePurchaseAccess}
-            loading={purchasing === 'access'}
-            style={{ marginTop: spacing.md }}
-          />
-        </Card>
       )}
 
-      {/* Extra Slots */}
-      {hasAccess && (
-        <Card style={styles.slotsCard}>
-          <View style={styles.pricingHeader}>
-            <Text style={styles.pricingTitle}>Extra Member Slots</Text>
-            <Text style={styles.price}>$5 / slot</Text>
+      {/* 4-tier plan cards */}
+      <Text style={styles.sectionLabel}>
+        {unusedCount > 0 ? 'Purchase another pool' : 'Choose a plan'}
+      </Text>
+
+      {POOL_PLANS.map((plan) => {
+        const isBuying = purchasing === plan.id;
+        return (
+          <Card key={plan.id} style={styles.planCard}>
+            <View style={styles.planHeader}>
+              <View>
+                <Text style={styles.planLabel}>{plan.slots} members</Text>
+                <Text style={styles.planDesc}>Create 1 pool with up to {plan.slots} members</Text>
+              </View>
+              <Text style={styles.planPrice}>{plan.priceLabel}</Text>
+            </View>
+            <View style={styles.planFeatures}>
+              <PlanFeature text="Submit predictions for all 72 matches" />
+              <PlanFeature text="Live standings & leaderboard" />
+              <PlanFeature text="Reusable invite link for your pool" />
+            </View>
+            <Button
+              title={
+                isBuying
+                  ? 'Processing…'
+                  : isWeb
+                  ? `Purchase — ${plan.priceLabel} (Demo)`
+                  : `Purchase — ${plan.priceLabel}`
+              }
+              onPress={() => handlePurchase(plan.id as PoolPlanId)}
+              loading={isBuying}
+              disabled={purchasing !== null && !isBuying}
+              style={{ marginTop: spacing.md }}
+            />
+          </Card>
+        );
+      })}
+
+      {/* Contact Us for >100 */}
+      <Card style={styles.contactCard}>
+        <View style={styles.planHeader}>
+          <View>
+            <Text style={styles.planLabel}>100+ members</Text>
+            <Text style={styles.planDesc}>Need a larger pool? We can help.</Text>
           </View>
-          <Text style={styles.slotsDesc}>
-            Add 1 member slot to:{' '}
-            <Text style={{ fontWeight: '700' }}>
-              {currentPool ? `"${currentPool.name}"` : 'no pool selected'}
-            </Text>
-          </Text>
-          <Button
-            title={purchasing === 'slots' ? 'Processing...' : 'Add 1 Slot — $5'}
-            onPress={handlePurchaseSlots}
-            loading={purchasing === 'slots'}
-            disabled={!currentPool}
-            style={{ marginTop: spacing.md }}
-          />
-          {!currentPool && (
-            <Text style={styles.hint}>Select a pool from Home first</Text>
-          )}
-        </Card>
-      )}
+          <Ionicons name="mail-outline" size={24} color={colors.primary} />
+        </View>
+        <Button
+          title="Contact Us"
+          variant="outline"
+          onPress={() => {
+            /* TODO: open mailto or contact form */
+          }}
+          style={{ marginTop: spacing.md }}
+        />
+      </Card>
 
-      {/* Entitlement summary */}
-      {entitlement && (
-        <Card style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Your Entitlements</Text>
-          <SummaryRow label="Base Slots" value={String(entitlement.base_slots)} />
-          <SummaryRow label="Extra Slots" value={String(entitlement.extra_slots)} />
-          <SummaryRow label="Total Slots" value={String(entitlement.total_slots)} bold />
-        </Card>
+      {/* Restore purchases (native only) */}
+      {!isWeb && (
+        <Button
+          title={restoring ? 'Restoring…' : 'Restore Purchases'}
+          variant="outline"
+          onPress={handleRestore}
+          loading={restoring}
+          style={{ marginTop: spacing.lg }}
+        />
       )}
-
-      <Button
-        title={restoring ? 'Restoring...' : 'Restore Purchases'}
-        variant="outline"
-        onPress={handleRestore}
-        loading={restoring}
-        style={{ marginTop: spacing.lg }}
-      />
 
       <Text style={styles.legal}>
         {isWeb
-          ? 'Web demo mode — no real payment processed.'
-          : 'Payment processed via App Store / Google Play. One-time purchase.'}
+          ? 'Web demo mode — no real payment is processed.'
+          : 'Payment processed via App Store / Google Play. One-time purchase per pool.'}
       </Text>
     </ScrollView>
   );
 }
 
-function Feature({ text }: { text: string }) {
+function PlanFeature({ text }: { text: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-      <Ionicons name="checkmark" size={16} color={colors.success} />
-      <Text style={{ ...typography.body, color: colors.text, marginLeft: spacing.sm }}>{text}</Text>
-    </View>
-  );
-}
-
-function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs }}>
-      <Text style={{ ...typography.body, color: colors.textMuted }}>{label}</Text>
-      <Text style={{ ...typography.body, color: colors.text, fontWeight: bold ? '700' : '400' }}>{value}</Text>
+    <View style={styles.featureRow}>
+      <Ionicons name="checkmark" size={14} color={colors.success} />
+      <Text style={styles.featureText}>{text}</Text>
     </View>
   );
 }
@@ -234,7 +234,12 @@ const styles = StyleSheet.create({
   container: { padding: spacing.md, paddingBottom: spacing.xxl },
   header: { alignItems: 'center', paddingVertical: spacing.xl },
   title: { ...typography.h1, color: colors.primary },
-  subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+  subtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
   webNote: {
     backgroundColor: '#fef9c3',
     borderRadius: radius.sm,
@@ -251,7 +256,7 @@ const styles = StyleSheet.create({
   bannerSuccess: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: colors.success },
   bannerError: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: colors.error },
   messageText: { ...typography.body, color: colors.text },
-  activeCard: {
+  entitlementCard: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
     marginBottom: spacing.md,
@@ -259,23 +264,43 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.success,
   },
-  activeTitle: { ...typography.h2, color: colors.success, marginTop: spacing.sm },
-  activeSub: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
-  pricingCard: { marginBottom: spacing.md },
-  pricingHeader: {
+  entitlementTitle: {
+    ...typography.h3,
+    color: colors.success,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+  entitlementSub: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  sectionLabel: {
+    ...typography.label,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  planCard: { marginBottom: spacing.md },
+  planHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
   },
-  pricingTitle: { ...typography.h3, color: colors.text },
-  price: { ...typography.h2, color: colors.primary },
-  features: {},
-  slotsCard: { marginBottom: spacing.md },
-  slotsDesc: { ...typography.body, color: colors.textMuted },
-  hint: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.xs },
-  summaryCard: { marginBottom: spacing.md },
-  summaryTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.md },
+  planLabel: { ...typography.h3, color: colors.text },
+  planDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  planPrice: { ...typography.h2, color: colors.primary },
+  planFeatures: { marginTop: spacing.xs },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+    gap: spacing.xs,
+  },
+  featureText: { ...typography.caption, color: colors.text, flex: 1 },
+  contactCard: { marginBottom: spacing.md },
   legal: {
     ...typography.caption,
     color: colors.textMuted,
