@@ -6,6 +6,8 @@ import {
   SectionList,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  TouchableOpacity,
 } from 'react-native';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
@@ -39,6 +41,8 @@ export default function PredictionsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [savedOk, setSavedOk] = useState(false);
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const isDeadlinePassed = currentPool
     ? new Date(currentPool.prediction_deadline) <= new Date()
@@ -127,10 +131,8 @@ export default function PredictionsScreen() {
     setValidationErrors([]);
     setSavedOk(false);
 
-    if (!allFilled) {
-      setError(
-        `Fill in all ${matches.length} matches first. ${matches.length - filledCount} still empty.`
-      );
+    if (filledCount === 0) {
+      setError('Ingresa al menos un resultado antes de guardar.');
       return;
     }
 
@@ -145,38 +147,32 @@ export default function PredictionsScreen() {
     }
   }
 
-  async function handleSubmit() {
+  async function doSubmit() {
     if (!currentPool || !user) return;
     setError(null);
     setValidationErrors([]);
     setSavedOk(false);
-
-    if (!allFilled) {
-      setError(
-        `Fill in all ${matches.length} matches first. ${matches.length - filledCount} still empty.`
-      );
-      return;
-    }
-
     setSubmitting(true);
 
     const saveResult = await savePredictionsBulk(currentPool.id, user.id, buildPredictionMap());
     if (!saveResult.success) {
       setSubmitting(false);
+      setShowConfirmSubmit(false);
       setError(saveResult.error ?? 'Failed to save predictions.');
       return;
     }
 
     const submitResult = await submitQuiniela(currentPool.id, user.id);
     setSubmitting(false);
+    setShowConfirmSubmit(false);
 
     if (submitResult.success) {
       const sub = await getSubmissionStatus(currentPool.id, user.id);
       setSubmission(sub);
-      setMode('view');
+      setShowSuccessModal(true);
     } else {
       setValidationErrors(submitResult.errors);
-      setError('Your quiniela has validation errors (see below). Fix and resubmit.');
+      setError('Tu quiniela tiene errores de validación (ver abajo). Corrígelos y vuelve a enviar.');
     }
   }
 
@@ -300,22 +296,21 @@ export default function PredictionsScreen() {
               ) : (
                 <>
                   <Button
-                    title={saving ? 'Saving...' : 'Save All Predictions'}
+                    title={saving ? 'Guardando...' : 'Guardar Predicciones'}
                     variant="outline"
                     onPress={handleSaveAll}
                     loading={saving}
-                    disabled={!allFilled || saving || submitting}
+                    disabled={filledCount === 0 || saving || submitting}
                     style={{ marginBottom: spacing.sm }}
                   />
                   <Button
-                    title={submitting ? 'Submitting...' : 'Submit Quiniela'}
-                    onPress={handleSubmit}
-                    loading={submitting}
+                    title="Enviar Quiniela"
+                    onPress={() => setShowConfirmSubmit(true)}
                     disabled={!allFilled || saving || submitting}
                   />
                   {!allFilled && (
                     <Text style={styles.hint}>
-                      {matches.length - filledCount} match{matches.length - filledCount !== 1 ? 'es' : ''} still need scores
+                      Faltan {matches.length - filledCount} partido{matches.length - filledCount !== 1 ? 's' : ''} por completar para poder enviar
                     </Text>
                   )}
                 </>
@@ -324,6 +319,54 @@ export default function PredictionsScreen() {
           }
         />
       )}
+
+      {/* ── Confirmation modal ── */}
+      <Modal visible={showConfirmSubmit} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>¿Enviar quiniela?</Text>
+            <Text style={styles.modalBody}>
+              ¿Estás seguro de que quieres enviar esta quiniela? Una vez enviada, no podrás cambiar tus predicciones.
+            </Text>
+            {submitting ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+            ) : (
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnOutline]}
+                  onPress={() => setShowConfirmSubmit(false)}
+                >
+                  <Text style={[styles.modalBtnText, { color: colors.textMuted }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  onPress={doSubmit}
+                >
+                  <Text style={[styles.modalBtnText, { color: '#fff' }]}>Aceptar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Success modal ── */}
+      <Modal visible={showSuccessModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={[styles.modalTitle, { color: colors.success }]}>¡Quiniela enviada!</Text>
+            <Text style={styles.modalBody}>
+              Tu quiniela ha sido creada exitosamente. Buena suerte.
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalBtn, styles.modalBtnPrimary, { alignSelf: 'center', marginTop: spacing.lg }]}
+              onPress={() => { setShowSuccessModal(false); setMode('view'); }}
+            >
+              <Text style={[styles.modalBtnText, { color: '#fff' }]}>Aceptar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -409,5 +452,54 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.sm,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 380,
+  },
+  modalTitle: {
+    ...typography.h2,
+    color: colors.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  modalBody: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  modalBtnOutline: {
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBtnPrimary: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+  },
+  modalBtnText: {
+    ...typography.label,
+    fontWeight: '600',
   },
 });
