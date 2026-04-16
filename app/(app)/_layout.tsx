@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { colors } from '@/components/ui/theme';
+import { TEST_MODE } from '@/lib/testMode';
 
 export default function AppLayout() {
   const { signOut } = useAuthStore();
@@ -68,6 +69,16 @@ export default function AppLayout() {
           title: 'Purchase',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="card" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="debug/index"
+        options={{
+          title: 'Debug',
+          href: TEST_MODE ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="construct" size={size} color={color} />
           ),
         }}
       />
