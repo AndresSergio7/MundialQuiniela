@@ -2,22 +2,27 @@ import { supabase } from '@/lib/supabase';
 import type { Pool, PoolMember } from '@/types';
 
 // ---- createPool ----
+// entitlementId: when provided, consumes that exact unused purchase.
+// Falls back to FIFO (oldest) if omitted.
 export async function createPool(
   adminId: string,
-  name: string
+  name: string,
+  entitlementId?: string
 ): Promise<{ pool: Pool | null; error: string | null }> {
-  // Find the oldest unused purchase (pool_id IS NULL, has_app_access = true).
-  // PostgreSQL allows multiple NULL rows in a UNIQUE(user_id, pool_id) constraint
-  // because each NULL is considered distinct from the others.
-  const { data: ent } = await supabase
+  let query = supabase
     .from('entitlements')
     .select('id, has_app_access, base_slots')
     .eq('user_id', adminId)
     .is('pool_id', null)
-    .eq('has_app_access', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .eq('has_app_access', true);
+
+  if (entitlementId) {
+    query = query.eq('id', entitlementId);
+  } else {
+    query = query.order('created_at', { ascending: true });
+  }
+
+  const { data: ent } = await query.limit(1).maybeSingle();
 
   if (!ent?.has_app_access) {
     return { pool: null, error: 'PURCHASE_REQUIRED' };
@@ -44,7 +49,7 @@ export async function createPool(
     role: 'admin',
   });
 
-  // Consume the entitlement by binding it to the new pool
+  // Consume this specific entitlement by binding it to the new pool
   await supabase
     .from('entitlements')
     .update({ pool_id: pool.id, updated_at: new Date().toISOString() })

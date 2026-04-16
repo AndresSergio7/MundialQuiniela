@@ -14,11 +14,10 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePool } from '@/hooks/usePool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
-import { createPool, deletePool, leavePool } from '@/services/pools';
+import { deletePool, leavePool } from '@/services/pools';
 import { joinViaInvite } from '@/services/invites';
 import { getSubmissionStatus } from '@/services/predictions';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
 import type { Pool, Submission } from '@/types';
@@ -30,10 +29,6 @@ export default function HomeScreen() {
   const { poolId: pendingPoolId, token: pendingToken, clearPendingInvite } =
     usePendingInviteStore();
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [poolName, setPoolName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
 
   // Delete / leave state
@@ -67,45 +62,9 @@ export default function HomeScreen() {
     loadSubs();
   }, [pools, user]);
 
-  // "Crear Quiniela" / "+ New Pool": go to purchase to buy+name in one flow.
-  // If the user already has an unused entitlement, show the name modal directly.
+  // Always route to purchase screen — it handles both unused entitlements and new purchases.
   function openCreateModal() {
-    if (!entitlement?.has_app_access) {
-      router.push('/(app)/purchase');
-      return;
-    }
-    setCreateError('');
-    setPoolName('');
-    setShowCreateModal(true);
-  }
-
-  async function handleCreatePool() {
-    if (!poolName.trim() || !user) return;
-    setCreateError('');
-    setCreating(true);
-
-    const { pool, error } = await createPool(user.id, poolName.trim());
-    setCreating(false);
-
-    if (error === 'PURCHASE_REQUIRED') {
-      setShowCreateModal(false);
-      router.push('/(app)/purchase');
-      return;
-    }
-
-    if (error) {
-      setCreateError(error);
-      return;
-    }
-
-    setShowCreateModal(false);
-    setPoolName('');
-    await fetchPools();
-
-    if (pool) {
-      setCurrentPool(pool);
-      router.push('/(app)/predictions');
-    }
+    router.push('/(app)/purchase');
   }
 
   function handleSelectPool(pool: Pool) {
@@ -232,46 +191,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Create Pool Modal */}
-      <Modal visible={showCreateModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Nueva Quiniela</Text>
-
-            {createError ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{createError}</Text>
-              </View>
-            ) : null}
-
-            <Input
-              label="Pool Name"
-              value={poolName}
-              onChangeText={(t) => { setPoolName(t); setCreateError(''); }}
-              placeholder="Ej. Mi Quiniela 2026"
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancelar"
-                variant="outline"
-                onPress={() => { setShowCreateModal(false); setCreateError(''); }}
-                fullWidth={false}
-                style={{ flex: 1, marginRight: spacing.sm }}
-              />
-              <Button
-                title="Crear"
-                onPress={handleCreatePool}
-                loading={creating}
-                disabled={!poolName.trim()}
-                fullWidth={false}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Delete / Leave confirmation modal */}
       <Modal
         visible={confirmPool !== null}
@@ -391,13 +310,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
-  modalContent: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.xl,
-    width: '100%',
-    maxWidth: 420,
-  },
   confirmContent: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -425,7 +337,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontWeight: '600',
   },
-  modalTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.lg },
   errorBanner: {
     backgroundColor: '#fef2f2',
     borderWidth: 1,

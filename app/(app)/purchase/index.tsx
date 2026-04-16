@@ -29,12 +29,13 @@ export default function PurchaseScreen() {
 
   const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const [unusedCount, setUnusedCount] = useState(0);
+  const [unusedEntitlements, setUnusedEntitlements] = useState<Entitlement[]>([]);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
-  // Name modal (shown after a successful purchase)
+  // Name modal (shown after a successful purchase or when picking an unused entitlement)
   const [showNameModal, setShowNameModal] = useState(false);
   const [poolName, setPoolName] = useState('');
+  const [selectedEntitlementId, setSelectedEntitlementId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -44,24 +45,17 @@ export default function PurchaseScreen() {
 
   async function refreshUnused() {
     if (!user) return;
-    const { count } = await supabase
-      .from('entitlements')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .is('pool_id', null)
-      .eq('has_app_access', true);
-    setUnusedCount(count ?? 0);
-
     const { data } = await supabase
       .from('entitlements')
       .select('*')
       .eq('user_id', user.id)
       .is('pool_id', null)
       .eq('has_app_access', true)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (data) setEntitlement(data as Entitlement);
+      .order('created_at', { ascending: true });
+    const list = (data ?? []) as Entitlement[];
+    setUnusedEntitlements(list);
+    // Keep auth store in sync with the oldest unused entitlement (for gate checks)
+    if (list.length > 0) setEntitlement(list[0]);
   }
 
   async function handlePurchase(planId: PoolPlanId) {
@@ -74,9 +68,10 @@ export default function PurchaseScreen() {
 
     if (success) {
       await refreshUnused();
-      // Open the name modal right away
+      // Open the name modal right away — entitlementId will be resolved in handleCreatePool (FIFO)
       setPoolName('');
       setCreateError('');
+      setSelectedEntitlementId(null);
       setShowNameModal(true);
     } else {
       setPurchaseError('La compra falló. Por favor intenta de nuevo.');
@@ -88,7 +83,11 @@ export default function PurchaseScreen() {
     setCreating(true);
     setCreateError('');
 
-    const { pool, error } = await createPool(user.id, poolName.trim());
+    const { pool, error } = await createPool(
+      user.id,
+      poolName.trim(),
+      selectedEntitlementId ?? undefined,
+    );
     setCreating(false);
 
     if (error && error !== 'PURCHASE_REQUIRED') {
@@ -97,7 +96,15 @@ export default function PurchaseScreen() {
     }
 
     setShowNameModal(false);
+    setSelectedEntitlementId(null);
     router.replace('/(app)');
+  }
+
+  function openNameModalForEntitlement(ent: Entitlement) {
+    setPoolName('');
+    setCreateError('');
+    setSelectedEntitlementId(ent.id);
+    setShowNameModal(true);
   }
 
   async function handleRestore() {
@@ -131,29 +138,43 @@ export default function PurchaseScreen() {
           </View>
         )}
 
-        {/* Unused entitlements — user already paid, just needs to create */}
-        {unusedCount > 0 && (
-          <Card style={styles.entitlementCard}>
-            <Ionicons name="checkmark-circle" size={28} color={colors.success} />
-            <Text style={styles.entitlementTitle}>
-              {unusedCount === 1
-                ? 'Tienes 1 quiniela disponible'
-                : `Tienes ${unusedCount} quinielas disponibles`}
+        {/* Unused entitlements — one card per purchase, each with its own Create button */}
+        {unusedEntitlements.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>
+              {unusedEntitlements.length === 1
+                ? 'Tienes 1 compra disponible'
+                : `Tienes ${unusedEntitlements.length} compras disponibles`}
             </Text>
-            <Text style={styles.entitlementSub}>
-              Ya puedes crear tu quiniela sin comprar de nuevo.
-            </Text>
-            <Button
-              title="Crear Quiniela"
-              onPress={() => { setPoolName(''); setCreateError(''); setShowNameModal(true); }}
-              style={{ marginTop: spacing.md }}
-            />
-          </Card>
+            {unusedEntitlements.map((ent) => (
+              <Card key={ent.id} style={styles.entitlementCard}>
+                <View style={styles.entitlementRow}>
+                  <View style={styles.entitlementInfo}>
+                    <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+                    <View style={{ marginLeft: spacing.sm, flex: 1 }}>
+                      <Text style={styles.entitlementTitle}>
+                        Quiniela para {ent.base_slots} participantes
+                      </Text>
+                      <Text style={styles.entitlementSub}>
+                        Lista para usar — sin costo adicional
+                      </Text>
+                    </View>
+                  </View>
+                  <Button
+                    title="Crear"
+                    onPress={() => openNameModalForEntitlement(ent)}
+                    fullWidth={false}
+                    style={styles.entitlementBtn}
+                  />
+                </View>
+              </Card>
+            ))}
+          </>
         )}
 
         {/* 4-tier plan cards */}
         <Text style={styles.sectionLabel}>
-          {unusedCount > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
+          {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
         </Text>
 
         {POOL_PLANS.map((plan) => {
@@ -235,7 +256,9 @@ export default function PurchaseScreen() {
             />
             <Text style={styles.modalTitle}>¡Ponle nombre a tu quiniela!</Text>
             <Text style={styles.modalSubtitle}>
-              Elige un nombre que identifique a tu grupo.
+              {selectedEntitlementId
+                ? `Capacidad: ${unusedEntitlements.find(e => e.id === selectedEntitlementId)?.base_slots ?? '?'} participantes`
+                : 'Elige un nombre que identifique a tu grupo.'}
             </Text>
 
             <Input
@@ -312,15 +335,25 @@ const styles = StyleSheet.create({
   },
   errorText: { ...typography.caption, color: colors.error },
   entitlementCard: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     backgroundColor: '#f0fdf4',
     borderWidth: 2,
     borderColor: colors.success,
   },
-  entitlementTitle: { ...typography.h3, color: colors.success, marginTop: spacing.sm, textAlign: 'center' },
-  entitlementSub: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
+  entitlementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  entitlementInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  entitlementTitle: { ...typography.label, color: colors.success, fontWeight: '700' },
+  entitlementSub: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  entitlementBtn: { paddingHorizontal: spacing.md },
   sectionLabel: { ...typography.label, color: colors.textMuted, marginBottom: spacing.sm, marginTop: spacing.xs },
   planCard: { marginBottom: spacing.md },
   planHeader: {
