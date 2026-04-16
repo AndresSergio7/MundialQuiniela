@@ -59,10 +59,30 @@ export async function createPool(
 }
 
 // ---- joinPool ----
+// Race-safe path: tries the join_pool_safe RPC first (SECURITY DEFINER +
+// FOR UPDATE lock prevents two simultaneous joins both reading count < max).
+// Falls back to direct client-side check when the RPC hasn't been deployed yet.
+// To deploy the race-safe RPC run JOIN_POOL_SAFE_SQL from src/lib/testMode.ts.
 export async function joinPool(
   userId: string,
   poolId: string
 ): Promise<{ success: boolean; error: string | null }> {
+  // Try RPC first
+  const { data: rpcData, error: rpcError } = await supabase.rpc('join_pool_safe', {
+    p_pool_id: poolId,
+  });
+
+  if (!rpcError) {
+    const result = rpcData as { success: boolean; error: string | null };
+    return { success: result.success, error: result.error };
+  }
+
+  // Only fall back if the function simply doesn't exist yet
+  if (!rpcError.message.includes('Could not find the function')) {
+    return { success: false, error: rpcError.message };
+  }
+
+  // Fallback: client-side check (no race-condition protection)
   const { data: pool } = await supabase
     .from('pools')
     .select('id, is_active, max_members')

@@ -103,11 +103,24 @@ export async function recalculateStandings(poolId: string): Promise<void> {
 
   if (!matches?.length) return;
 
-  // Fetch all predictions in this pool
+  // Only score users who have a valid, submitted quiniela.
+  // Draft users (saved but not submitted) are excluded from standings.
+  const { data: submissions } = await supabase
+    .from('submissions')
+    .select('user_id')
+    .eq('pool_id', poolId)
+    .eq('is_valid', true);
+
+  if (!submissions?.length) return;
+
+  const submittedUserIds = submissions.map((s: { user_id: string }) => s.user_id);
+
+  // Fetch predictions only for submitted users
   const { data: predictions } = await supabase
     .from('predictions')
     .select('match_id, user_id, home_score, away_score')
-    .eq('pool_id', poolId);
+    .eq('pool_id', poolId)
+    .in('user_id', submittedUserIds);
 
   if (!predictions?.length) return;
 

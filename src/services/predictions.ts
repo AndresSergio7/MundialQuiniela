@@ -115,7 +115,20 @@ export async function submitQuiniela(
     predMap[p.match_id] = { home: p.home_score, away: p.away_score };
   }
 
-  const validation: ValidationResult = validateQuiniela(predMap, matchIds);
+  // In TEST_MODE the scoreline/count rules are skipped so QA runs don't require
+  // 72 fully filled matches.  Individual score format is still validated by
+  // savePredictionsBulk before we ever reach this point.
+  let validation: ValidationResult;
+  try {
+    const { TEST_MODE, TEST_POOL_CONFIG } = await import('@/lib/testMode');
+    validation =
+      TEST_MODE && TEST_POOL_CONFIG.skipValidationRules
+        ? { valid: true, errors: [] }
+        : validateQuiniela(predMap, matchIds);
+  } catch {
+    // If testMode module fails to load for any reason, use production validation
+    validation = validateQuiniela(predMap, matchIds);
+  }
 
   await supabase.from('submissions').upsert(
     {
