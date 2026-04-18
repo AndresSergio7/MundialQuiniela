@@ -1,114 +1,131 @@
 // ============================================================
 // QUINIELA VALIDATION ENGINE
-// ============================================================
-//
-// Rules:
-//  1. All 72 matches must have a prediction
-//  2. >= 7 distinct scorelines
-//  3. >= 5 scorelines repeated 2+ times
-//  4. max 28 uses of any single scoreline
-//  5. >= 5 draws (home === away)
-//
+// ------------------------------------------------------------
+// The "shape" rules below mirror the real-world quiniela format
+// but are now data-driven: pass a `ValidationConfig` or let the
+// engine derive sensible ratios from the actual match count
+// (useful for test pools and future tournament formats).
 // ============================================================
 
-import type { PredictionMap, ValidationResult, Scoreline } from '@/types';
+import type {
+  PredictionMap,
+  ValidationResult,
+  Scoreline,
+} from '@/types';
 
-const TOTAL_MATCHES = 72;
-const MIN_DISTINCT_SCORELINES = 7;
-const MIN_REPEATED_SCORELINES = 5;
-const MAX_USES_PER_SCORELINE = 28;
-const MIN_DRAWS = 5;
+export interface ValidationConfig {
+  totalMatches: number;
+  minDistinctScorelines: number;
+  minRepeatedScorelines: number;
+  maxUsesPerScoreline: number;
+  minDraws: number;
+}
 
-// Build scoreline frequency map
+// Defaults tuned for 72 matches — unchanged from the legacy spec.
+export const DEFAULT_CONFIG: ValidationConfig = {
+  totalMatches: 72,
+  minDistinctScorelines: 7,
+  minRepeatedScorelines: 5,
+  maxUsesPerScoreline: 28,
+  minDraws: 5,
+};
+
+// Scales the defaults to any match count.  Keeps integer results
+// and hard floors so a tiny test pool still makes sense.
+export function deriveConfig(totalMatches: number): ValidationConfig {
+  if (totalMatches === DEFAULT_CONFIG.totalMatches) return DEFAULT_CONFIG;
+  const ratio = totalMatches / DEFAULT_CONFIG.totalMatches;
+  return {
+    totalMatches,
+    minDistinctScorelines: Math.max(1, Math.round(DEFAULT_CONFIG.minDistinctScorelines * ratio)),
+    minRepeatedScorelines: Math.max(0, Math.round(DEFAULT_CONFIG.minRepeatedScorelines * ratio)),
+    maxUsesPerScoreline: Math.max(1, Math.round(DEFAULT_CONFIG.maxUsesPerScoreline * ratio)),
+    minDraws: Math.max(1, Math.round(DEFAULT_CONFIG.minDraws * ratio)),
+  };
+}
+
 function buildScorelineMap(predictions: PredictionMap): Record<string, Scoreline> {
   const map: Record<string, Scoreline> = {};
-
   for (const pred of Object.values(predictions)) {
     const key = `${pred.home}-${pred.away}`;
-    if (!map[key]) {
-      map[key] = { home: pred.home, away: pred.away, count: 0, key };
-    }
+    if (!map[key]) map[key] = { home: pred.home, away: pred.away, count: 0, key };
     map[key].count += 1;
   }
-
   return map;
 }
 
-// Count draws
 function countDraws(predictions: PredictionMap): number {
   return Object.values(predictions).filter((p) => p.home === p.away).length;
 }
 
+// Main entry point.  `matchIds` drives the total count + missing
+// list; `config` can be passed explicitly (production) or derived
+// from `matchIds.length` (tests, future tournaments).
 export function validateQuiniela(
   predictions: PredictionMap,
-  matchIds: string[]
+  matchIds: string[],
+  config?: ValidationConfig,
 ): ValidationResult {
+  const cfg = config ?? deriveConfig(matchIds.length);
   const errors: string[] = [];
 
-  // Rule 1: All matches predicted
+  // Rule 1: every match predicted.
   const predicted = Object.keys(predictions).length;
-  if (predicted < TOTAL_MATCHES) {
-    const missing = matchIds.filter((id) => !predictions[id]);
+  if (predicted < cfg.totalMatches) {
+    const missing = matchIds.filter((id) => !predictions[id]).length;
     errors.push(
-      `Missing predictions for ${missing.length} match(es). All 72 matches required.`
+      `Faltan ${missing} predicción(es). Se requieren los ${cfg.totalMatches} partidos.`,
     );
   }
 
   const scorelineMap = buildScorelineMap(predictions);
   const scorelines = Object.values(scorelineMap);
 
-  // Rule 2: >= 7 distinct scorelines
-  const distinctCount = scorelines.length;
-  if (distinctCount < MIN_DISTINCT_SCORELINES) {
+  // Rule 2: minimum distinct scorelines.
+  if (scorelines.length < cfg.minDistinctScorelines) {
     errors.push(
-      `Only ${distinctCount} distinct scoreline(s). Minimum ${MIN_DISTINCT_SCORELINES} required.`
+      `Solo ${scorelines.length} marcador(es) distintos. Mínimo ${cfg.minDistinctScorelines}.`,
     );
   }
 
-  // Rule 3: >= 5 scorelines used 2+ times
-  const repeatedCount = scorelines.filter((s) => s.count >= 2).length;
-  if (repeatedCount < MIN_REPEATED_SCORELINES) {
+  // Rule 3: minimum scorelines used 2+ times.
+  const repeated = scorelines.filter((s) => s.count >= 2).length;
+  if (repeated < cfg.minRepeatedScorelines) {
     errors.push(
-      `Only ${repeatedCount} scoreline(s) used 2+ times. Minimum ${MIN_REPEATED_SCORELINES} required.`
+      `Solo ${repeated} marcador(es) repetidos. Mínimo ${cfg.minRepeatedScorelines}.`,
     );
   }
 
-  // Rule 4: No scoreline used more than 28 times
-  const overused = scorelines.filter((s) => s.count > MAX_USES_PER_SCORELINE);
-  if (overused.length > 0) {
-    overused.forEach((s) => {
+  // Rule 4: no scoreline overused.
+  for (const s of scorelines) {
+    if (s.count > cfg.maxUsesPerScoreline) {
       errors.push(
-        `Scoreline ${s.home}-${s.away} used ${s.count} times. Maximum ${MAX_USES_PER_SCORELINE} allowed.`
+        `El marcador ${s.home}-${s.away} se usó ${s.count} veces. Máximo ${cfg.maxUsesPerScoreline}.`,
       );
-    });
+    }
   }
 
-  // Rule 5: >= 5 draws
-  const drawCount = countDraws(predictions);
-  if (drawCount < MIN_DRAWS) {
-    errors.push(
-      `Only ${drawCount} draw(s) predicted. Minimum ${MIN_DRAWS} required.`
-    );
+  // Rule 5: minimum draws.
+  const draws = countDraws(predictions);
+  if (draws < cfg.minDraws) {
+    errors.push(`Solo ${draws} empate(s). Mínimo ${cfg.minDraws}.`);
   }
 
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
+  return { valid: errors.length === 0, errors };
 }
 
-// Partial save validation (less strict — just format)
+// Single-cell validation used in the edit UI.
 export function validateSinglePrediction(home: number, away: number): string | null {
   if (!Number.isInteger(home) || home < 0 || home > 20) {
-    return 'Home score must be a whole number between 0 and 20.';
+    return 'El marcador local debe ser un número entero entre 0 y 20.';
   }
   if (!Number.isInteger(away) || away < 0 || away > 20) {
-    return 'Away score must be a whole number between 0 and 20.';
+    return 'El marcador visitante debe ser un número entero entre 0 y 20.';
   }
   return null;
 }
 
-// Get stats for UI feedback
+// Quick stats for live UI feedback (progress bar, counters).
 export interface QuinielaStats {
   total: number;
   predicted: number;
@@ -117,26 +134,30 @@ export interface QuinielaStats {
   draws: number;
   maxUsed: number;
   maxUsedKey: string;
+  config: ValidationConfig;
 }
 
 export function getQuinielaStats(
   predictions: PredictionMap,
-  totalMatches = TOTAL_MATCHES
+  totalMatches = DEFAULT_CONFIG.totalMatches,
+  config?: ValidationConfig,
 ): QuinielaStats {
+  const cfg = config ?? deriveConfig(totalMatches);
   const scorelineMap = buildScorelineMap(predictions);
   const scorelines = Object.values(scorelineMap);
   const maxEntry = scorelines.reduce(
     (max, s) => (s.count > max.count ? s : max),
-    { count: 0, key: '' } as Partial<Scoreline> & { count: number; key: string }
+    { count: 0, key: '' } as Partial<Scoreline> & { count: number; key: string },
   );
 
   return {
-    total: totalMatches,
+    total: cfg.totalMatches,
     predicted: Object.keys(predictions).length,
     distinct: scorelines.length,
     repeated: scorelines.filter((s) => s.count >= 2).length,
     draws: countDraws(predictions),
     maxUsed: maxEntry.count,
     maxUsedKey: maxEntry.key,
+    config: cfg,
   };
 }

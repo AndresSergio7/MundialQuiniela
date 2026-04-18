@@ -16,7 +16,8 @@ import { usePool } from '@/hooks/usePool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
 import { deletePool, leavePool } from '@/services/pools';
 import { joinViaInvite } from '@/services/invites';
-import { getSubmissionStatus } from '@/services/predictions';
+import { getSubmissionsForPools } from '@/services/predictions';
+import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
@@ -30,6 +31,9 @@ export default function HomeScreen() {
     usePendingInviteStore();
 
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
+  const [kickoffDate, setKickoffDate] = useState<Date>(
+    DEFAULT_CONFIG.firstMatchKickoff,
+  );
 
   // Delete / leave state
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
@@ -51,16 +55,23 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (!user || !pools.length) return;
-    const loadSubs = async () => {
-      const map: Record<string, Submission | null> = {};
-      for (const pool of pools) {
-        map[pool.id] = await getSubmissionStatus(pool.id, user.id);
-      }
-      setSubmissions(map);
+    if (!user || !pools.length) {
+      setSubmissions({});
+      return;
+    }
+    let cancelled = false;
+    const poolIds = pools.map((p) => p.id);
+    getSubmissionsForPools(user.id, poolIds).then((map) => {
+      if (!cancelled) setSubmissions(map);
+    });
+    return () => {
+      cancelled = true;
     };
-    loadSubs();
   }, [pools, user]);
+
+  useEffect(() => {
+    getTournamentConfig().then((cfg) => setKickoffDate(cfg.firstMatchKickoff));
+  }, []);
 
   // Always route to purchase screen — it handles both unused entitlements and new purchases.
   function openCreateModal() {
@@ -98,8 +109,10 @@ export default function HomeScreen() {
     await fetchPools();
   }
 
-  const deadline = new Date('2026-06-11T18:00:00Z');
-  const daysLeft = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86400000));
+  const daysLeft = Math.max(
+    0,
+    Math.ceil((kickoffDate.getTime() - Date.now()) / 86400000),
+  );
   const hasAccess = entitlement?.has_app_access ?? false;
   const confirmIsAdmin = confirmPool ? confirmPool.admin_id === user?.id : false;
 
@@ -152,6 +165,14 @@ export default function HomeScreen() {
         ) : (
           pools.map((pool) => {
             const sub = submissions[pool.id];
+            const badgeLabel = sub?.is_final
+              ? 'Enviada'
+              : sub?.is_valid
+              ? 'Lista'
+              : sub
+              ? 'Incompleta'
+              : 'Pendiente';
+            const badgeStyle = sub?.is_final || sub?.is_valid ? styles.badgeGreen : styles.badgeGray;
             return (
               <TouchableOpacity
                 key={pool.id}
@@ -167,10 +188,8 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                     <View style={styles.poolActions}>
-                      <View style={[styles.badge, sub?.is_valid ? styles.badgeGreen : styles.badgeGray]}>
-                        <Text style={styles.badgeText}>
-                          {sub?.is_valid ? 'Submitted' : sub ? 'Invalid' : 'Pending'}
-                        </Text>
+                      <View style={[styles.badge, badgeStyle]}>
+                        <Text style={styles.badgeText}>{badgeLabel}</Text>
                       </View>
                       <TouchableOpacity
                         onPress={(e) => { e.stopPropagation(); handleTrashPress(pool); }}

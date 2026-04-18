@@ -108,6 +108,7 @@ export interface Submission {
   user_id: string;
   submitted_at: string;
   is_valid: boolean;
+  is_final: boolean;
   validation_errors: string[];
   locked_at: string | null;
 }

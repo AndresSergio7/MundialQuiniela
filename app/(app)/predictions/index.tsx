@@ -48,7 +48,10 @@ export default function PredictionsScreen() {
     ? new Date(currentPool.prediction_deadline) <= new Date()
     : false;
 
-  const isLocked = isDeadlinePassed || mode === 'view';
+  // Once a user's submission is marked final, no more edits are
+  // ever allowed — even if the deadline hasn't passed.
+  const isFinal = submission?.is_final === true;
+  const isLocked = isDeadlinePassed || isFinal || mode === 'view';
 
   const loadAll = useCallback(async (pool?: Pool) => {
     const activePool = pool ?? currentPool;
@@ -80,7 +83,8 @@ export default function PredictionsScreen() {
     setLocalScores(scores);
 
     const deadlinePast = new Date(activePool.prediction_deadline) <= new Date();
-    if (sub?.is_valid && !deadlinePast) {
+    // Final submissions or a passed deadline → read-only.
+    if (sub?.is_final || (sub?.is_valid && !deadlinePast)) {
       setMode('view');
     } else {
       setMode('edit');
@@ -278,20 +282,26 @@ export default function PredictionsScreen() {
             <View style={styles.footer}>
               {isDeadlinePassed ? (
                 <Text style={styles.deadlinePassed}>
-                  The prediction deadline has passed. No more changes allowed.
+                  Se cerró el plazo de predicciones. Ya no se aceptan cambios.
                 </Text>
               ) : mode === 'view' ? (
                 <Card style={styles.submittedCard}>
-                  <Text style={styles.submittedCardTitle}>Quiniela Submitted!</Text>
-                  <Text style={styles.submittedCardSub}>
-                    You can still modify your predictions until the deadline.
+                  <Text style={styles.submittedCardTitle}>
+                    {isFinal ? 'Quiniela enviada y bloqueada' : 'Quiniela válida'}
                   </Text>
-                  <Button
-                    title="Modify Predictions"
-                    variant="outline"
-                    onPress={handleModify}
-                    style={{ marginTop: spacing.md }}
-                  />
+                  <Text style={styles.submittedCardSub}>
+                    {isFinal
+                      ? 'No podrás modificar tus predicciones.'
+                      : 'Puedes seguir ajustando hasta el cierre.'}
+                  </Text>
+                  {!isFinal && (
+                    <Button
+                      title="Modificar predicciones"
+                      variant="outline"
+                      onPress={handleModify}
+                      style={{ marginTop: spacing.md }}
+                    />
+                  )}
                 </Card>
               ) : (
                 <>

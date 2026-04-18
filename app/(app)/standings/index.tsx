@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { getStandingsWithAllMembers } from '@/services/standings';
+import { getPoolMembers } from '@/services/pools';
 import { syncResults } from '@/lib/api';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { StandingRow } from '@/components/StandingRow';
@@ -22,6 +23,7 @@ export default function StandingsScreen() {
   const { user } = useAuthStore();
   const { currentPool } = usePoolStore();
   const [standings, setStandings] = useState<Standing[]>([]);
+  const [memberCount, setMemberCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
@@ -29,8 +31,12 @@ export default function StandingsScreen() {
     const activePool = pool ?? currentPool;
     if (!activePool) return;
     setLoading(true);
-    const data = await getStandingsWithAllMembers(activePool.id);
+    const [data, members] = await Promise.all([
+      getStandingsWithAllMembers(activePool.id),
+      getPoolMembers(activePool.id),
+    ]);
     setStandings(data);
+    setMemberCount(members.length);
     setLoading(false);
   }
 
@@ -64,17 +70,17 @@ export default function StandingsScreen() {
       {/* Sync button row */}
       <View style={styles.actionRow}>
         <Text style={styles.participantsLabel}>
-          {standings.length} participant{standings.length !== 1 ? 's' : ''}
+          {standings.length} de {memberCount} miembro{memberCount !== 1 ? 's' : ''} enviaron
         </Text>
         <TouchableOpacity onPress={handleSync} disabled={syncing}>
-          <Text style={styles.syncBtn}>{syncing ? 'Syncing...' : 'Sync Results'}</Text>
+          <Text style={styles.syncBtn}>{syncing ? 'Sincronizando…' : 'Sincronizar resultados'}</Text>
         </TouchableOpacity>
       </View>
 
       {/* User's own standing card */}
       {userStanding && (
         <Card style={styles.myCard}>
-          <Text style={styles.myCardLabel}>My Position</Text>
+          <Text style={styles.myCardLabel}>Mi posición</Text>
           <View style={styles.myCardRow}>
             <Text style={styles.myRank}>
               {userStanding.rank != null ? `#${userStanding.rank}` : '-'}
@@ -82,7 +88,7 @@ export default function StandingsScreen() {
             <View style={styles.myStats}>
               <Text style={styles.myPoints}>{userStanding.total_points} pts</Text>
               <Text style={styles.myMeta}>
-                {userStanding.exact_scores} exact · {userStanding.correct_results} correct
+                {userStanding.exact_scores} exactos · {userStanding.correct_results} acertados
               </Text>
             </View>
           </View>
@@ -109,9 +115,9 @@ export default function StandingsScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No participants yet.</Text>
+              <Text style={styles.emptyText}>Aún no hay participantes en la tabla</Text>
               <Text style={styles.emptySubText}>
-                Members will appear here once they submit predictions.
+                Los miembros aparecerán aquí cuando envíen su quiniela.
               </Text>
             </View>
           }
