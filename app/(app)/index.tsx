@@ -20,7 +20,7 @@ import { getSubmissionsForPools } from '@/services/predictions';
 import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { colors, spacing, typography, radius } from '@/components/ui/theme';
+import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import type { Pool, Submission } from '@/types';
 
 export default function HomeScreen() {
@@ -31,17 +31,11 @@ export default function HomeScreen() {
     usePendingInviteStore();
 
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
-  const [kickoffDate, setKickoffDate] = useState<Date>(
-    DEFAULT_CONFIG.firstMatchKickoff,
-  );
-
-  // Delete / leave state
+  const [kickoffDate, setKickoffDate] = useState<Date>(DEFAULT_CONFIG.firstMatchKickoff);
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // On mount: complete any pending invite from a pre-login invite link click,
-  // then refresh the pool list so the new pool appears immediately.
   useEffect(() => {
     async function init() {
       if (user && pendingPoolId && pendingToken) {
@@ -55,25 +49,18 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (!user || !pools.length) {
-      setSubmissions({});
-      return;
-    }
+    if (!user || !pools.length) { setSubmissions({}); return; }
     let cancelled = false;
-    const poolIds = pools.map((p) => p.id);
-    getSubmissionsForPools(user.id, poolIds).then((map) => {
+    getSubmissionsForPools(user.id, pools.map(p => p.id)).then(map => {
       if (!cancelled) setSubmissions(map);
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [pools, user]);
 
   useEffect(() => {
-    getTournamentConfig().then((cfg) => setKickoffDate(cfg.firstMatchKickoff));
+    getTournamentConfig().then(cfg => setKickoffDate(cfg.firstMatchKickoff));
   }, []);
 
-  // Always route to purchase screen — it handles both unused entitlements and new purchases.
   function openCreateModal() {
     router.push('/(app)/purchase');
   }
@@ -92,27 +79,19 @@ export default function HomeScreen() {
     if (!confirmPool || !user) return;
     setDeleting(true);
     setDeleteError(null);
-
     const isAdmin = confirmPool.admin_id === user.id;
     const { error } = isAdmin
       ? await deletePool(user.id, confirmPool.id)
       : await leavePool(user.id, confirmPool.id);
-
     setDeleting(false);
-
-    if (error) {
-      setDeleteError(error);
-      return;
-    }
-
+    if (error) { setDeleteError(error); return; }
     setConfirmPool(null);
     await fetchPools();
   }
 
-  const daysLeft = Math.max(
-    0,
-    Math.ceil((kickoffDate.getTime() - Date.now()) / 86400000),
-  );
+  const now = Date.now();
+  const msLeft = kickoffDate.getTime() - now;
+  const daysLeft = Math.max(0, Math.ceil(msLeft / 86400000));
   const hasAccess = entitlement?.has_app_access ?? false;
   const confirmIsAdmin = confirmPool ? confirmPool.admin_id === user?.id : false;
 
@@ -120,97 +99,128 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchPools} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchPools} tintColor={colors.accent} />}
     >
-      {/* Banner */}
-      <Card style={styles.banner}>
-        <Text style={styles.bannerTitle}>FIFA World Cup 2026</Text>
-        <Text style={styles.bannerSub}>
-          {daysLeft > 0 ? `${daysLeft} days until kickoff` : 'Tournament underway!'}
-        </Text>
-        {profile && (
-          <Text style={styles.bannerUser}>Welcome, {profile.username}!</Text>
-        )}
-      </Card>
+      {/* ── HERO BANNER ── */}
+      <View style={styles.hero}>
+        <View style={styles.heroPattern}>
+          {/* decorative circles */}
+          <View style={styles.heroBall1} />
+          <View style={styles.heroBall2} />
+        </View>
+        <View style={styles.heroContent}>
+          <View style={styles.heroBadge}>
+            <Text style={styles.heroBadgeText}>⚽  FIFA WORLD CUP 2026</Text>
+          </View>
+          <Text style={styles.heroTitle}>Mundial{'\n'}Quiniela</Text>
+          <Text style={styles.heroSub}>
+            {daysLeft > 0
+              ? `${daysLeft} días para el inicio`
+              : '¡El torneo ha comenzado!'}
+          </Text>
+          {profile && (
+            <View style={styles.heroGreeting}>
+              <Ionicons name="person-circle" size={16} color={colors.accent} />
+              <Text style={styles.heroGreetingText}>
+                Bienvenido, {profile.username}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
 
-      {/* Access banner */}
+      {/* ── Access banner ── */}
       {!hasAccess && (
         <TouchableOpacity style={styles.accessBanner} onPress={() => router.push('/(app)/purchase')}>
-          <Text style={styles.accessText}>⚽  Get full access — tap here</Text>
+          <Ionicons name="lock-open" size={18} color={colors.navy} />
+          <Text style={styles.accessText}>Compra tu quiniela y participa</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.navy} />
         </TouchableOpacity>
       )}
 
-      {/* My Pools */}
+      {/* ── My Pools ── */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>My Pools</Text>
-          <TouchableOpacity onPress={openCreateModal}>
-            <Text style={styles.createBtn}>+ Nueva</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="layers" size={16} color={colors.primary} />
+            <Text style={styles.sectionTitle}>Mis Quinielas</Text>
+          </View>
+          <TouchableOpacity style={styles.newBtn} onPress={openCreateModal}>
+            <Ionicons name="add" size={14} color="#fff" />
+            <Text style={styles.newBtnText}>Nueva</Text>
           </TouchableOpacity>
         </View>
 
         {pools.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Ionicons name="trophy-outline" size={48} color={colors.primary} style={{ marginBottom: spacing.md }} />
-            <Text style={styles.emptyText}>Sin quinielas aún</Text>
-            <Text style={styles.emptySubText}>
-              Crea tu propia quiniela o únete a una con un link de invitación.
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="trophy" size={42} color={colors.accent} />
+            </View>
+            <Text style={styles.emptyTitle}>Sin quinielas aún</Text>
+            <Text style={styles.emptyBody}>
+              Crea tu quiniela, invita a tus amigos y compite por el primer lugar.
             </Text>
             <Button
               title="Crear Quiniela"
               onPress={() => router.push('/(app)/purchase')}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
+              size="lg"
             />
           </Card>
         ) : (
           pools.map((pool) => {
             const sub = submissions[pool.id];
-            const badgeLabel = sub?.is_final
-              ? 'Enviada'
+            const isFinal = sub?.is_final === true;
+            const badgeLabel = isFinal ? 'Enviada' : sub?.is_valid ? 'Lista' : sub ? 'Incompleta' : 'Pendiente';
+            const badgeStyle = isFinal
+              ? styles.badgeFinal
               : sub?.is_valid
-              ? 'Lista'
-              : sub
-              ? 'Incompleta'
-              : 'Pendiente';
-            const badgeStyle = sub?.is_final || sub?.is_valid ? styles.badgeGreen : styles.badgeGray;
+              ? styles.badgeGreen
+              : styles.badgeGray;
+
             return (
               <TouchableOpacity
                 key={pool.id}
                 onPress={() => handleSelectPool(pool)}
-                activeOpacity={0.85}
+                activeOpacity={0.88}
               >
-                <Card style={styles.poolCard}>
-                  <View style={styles.poolRow}>
-                    <View style={styles.poolInfo}>
-                      <Text style={styles.poolName}>{pool.name}</Text>
-                      <Text style={styles.poolMeta}>
-                        {pool.admin_id === user?.id ? 'Admin' : 'Miembro'} · Max {pool.max_members}
-                      </Text>
-                    </View>
-                    <View style={styles.poolActions}>
-                      <View style={[styles.badge, badgeStyle]}>
-                        <Text style={styles.badgeText}>{badgeLabel}</Text>
+                <View style={[styles.poolCard, isFinal && styles.poolCardFinal]}>
+                  {/* left accent stripe */}
+                  <View style={[styles.poolStripe, isFinal ? styles.poolStripeGold : styles.poolStripeGreen]} />
+
+                  <View style={styles.poolCardContent}>
+                    <View style={styles.poolRow}>
+                      <View style={styles.poolInfo}>
+                        <Text style={styles.poolName}>{pool.name}</Text>
+                        <Text style={styles.poolMeta}>
+                          {pool.admin_id === user?.id ? '👑 Admin' : '👤 Miembro'} · {pool.max_members} participantes
+                        </Text>
                       </View>
-                      <TouchableOpacity
-                        onPress={(e) => { e.stopPropagation(); handleTrashPress(pool); }}
-                        style={styles.trashBtn}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={colors.error} />
-                      </TouchableOpacity>
+                      <View style={styles.poolActions}>
+                        <View style={[styles.badge, badgeStyle]}>
+                          <Text style={styles.badgeText}>{badgeLabel}</Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={(e) => { e.stopPropagation(); handleTrashPress(pool); }}
+                          style={styles.trashBtn}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="trash-outline" size={17} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
+                    {sub && sub.validation_errors?.length > 0 && (
+                      <Text style={styles.validationError}>⚠ {sub.validation_errors[0]}</Text>
+                    )}
                   </View>
-                  {sub && sub.validation_errors?.length > 0 && (
-                    <Text style={styles.validationError}>{sub.validation_errors[0]}</Text>
-                  )}
-                </Card>
+                </View>
               </TouchableOpacity>
             );
           })
         )}
       </View>
 
-      {/* Delete / Leave confirmation modal */}
+      {/* ── Confirm delete / leave ── */}
       <Modal
         visible={confirmPool !== null}
         transparent
@@ -219,34 +229,31 @@ export default function HomeScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmContent}>
-            <Ionicons
-              name={confirmIsAdmin ? 'trash' : 'exit-outline'}
-              size={40}
-              color={colors.error}
-              style={{ marginBottom: spacing.md }}
-            />
-
+            <View style={styles.confirmIconWrap}>
+              <Ionicons
+                name={confirmIsAdmin ? 'trash' : 'exit-outline'}
+                size={32}
+                color={colors.error}
+              />
+            </View>
             <Text style={styles.confirmTitle}>
-              {confirmIsAdmin ? 'Eliminar pool' : 'Salir del pool'}
+              {confirmIsAdmin ? 'Eliminar quiniela' : 'Salir de la quiniela'}
             </Text>
-
             <Text style={styles.confirmQuestion}>
-              ¿Estás seguro que deseas eliminar{' '}
+              ¿Confirmas que quieres{' '}
+              {confirmIsAdmin ? 'eliminar' : 'salir de'}{' '}
               <Text style={styles.confirmPoolName}>"{confirmPool?.name}"</Text>?
             </Text>
-
             <Text style={styles.confirmWarning}>
               {confirmIsAdmin
-                ? 'Si lo eliminas, todos los datos serán perdidos para todos los usuarios.'
-                : 'Si lo eliminas, todos los datos serán perdidos.'}
+                ? 'Todos los datos serán eliminados permanentemente.'
+                : 'Perderás tu acceso a esta quiniela.'}
             </Text>
-
             {deleteError && (
-              <View style={[styles.errorBanner, { marginTop: spacing.md }]}>
+              <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{deleteError}</Text>
               </View>
             )}
-
             {deleting ? (
               <ActivityIndicator color={colors.error} style={{ marginTop: spacing.xl }} />
             ) : (
@@ -260,9 +267,10 @@ export default function HomeScreen() {
                 />
                 <Button
                   title={confirmIsAdmin ? 'Eliminar' : 'Salir'}
+                  variant="danger"
                   onPress={handleConfirmDelete}
                   fullWidth={false}
-                  style={{ flex: 1, backgroundColor: colors.error }}
+                  style={{ flex: 1 }}
                 />
               </View>
             )}
@@ -275,94 +283,252 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.md, paddingBottom: spacing.xxl },
-  banner: {
-    backgroundColor: colors.primary,
-    marginBottom: spacing.md,
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
+  container: { paddingBottom: spacing.xxl },
+
+  // Hero
+  hero: {
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  bannerTitle: { ...typography.h2, color: '#fff', textAlign: 'center' },
-  bannerSub: { ...typography.body, color: '#c9d4f5', marginTop: spacing.xs },
-  bannerUser: { ...typography.label, color: colors.accent, marginTop: spacing.sm },
+  heroPattern: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    overflow: 'hidden',
+  },
+  heroBall1: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    top: -50,
+    right: -40,
+  },
+  heroBall2: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    bottom: -30,
+    left: -20,
+  },
+  heroContent: { position: 'relative' },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(201,168,76,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.4)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.accent,
+    letterSpacing: 1,
+  },
+  heroTitle: {
+    fontSize: 40,
+    fontWeight: '900',
+    color: '#fff',
+    lineHeight: 44,
+    letterSpacing: -1,
+    marginBottom: spacing.sm,
+  },
+  heroSub: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '500',
+    marginBottom: spacing.md,
+  },
+  heroGreeting: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  heroGreetingText: {
+    fontSize: 13,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+
+  // Access banner
   accessBanner: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.sm,
   },
-  accessText: { ...typography.label, color: colors.text, fontWeight: '600' },
-  section: { marginTop: spacing.sm },
+  accessText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+
+  // Section
+  section: { padding: spacing.md },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  sectionTitle: { ...typography.h3, color: colors.text },
-  createBtn: { ...typography.label, color: colors.primary, fontWeight: '700' },
-  emptyCard: { alignItems: 'center', paddingVertical: spacing.xl },
-  emptyText: { ...typography.h3, color: colors.text },
-  emptySubText: {
-    ...typography.body,
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  newBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.full,
+    ...shadows.sm,
+  },
+  newBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+
+  // Empty state
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    backgroundColor: colors.surface,
+  },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.accent + '50',
+  },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
+  emptyBody: {
+    fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center',
-    marginTop: spacing.sm,
+    lineHeight: 20,
+    paddingHorizontal: spacing.md,
   },
-  poolCard: { marginBottom: spacing.sm },
+
+  // Pool card
+  poolCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  poolCardFinal: {
+    backgroundColor: '#FFFDF5',
+  },
+  poolStripe: {
+    width: 4,
+    backgroundColor: colors.primary,
+  },
+  poolStripeGold: { backgroundColor: colors.accent },
+  poolStripeGreen: { backgroundColor: colors.primary },
+  poolCardContent: { flex: 1, padding: spacing.md },
   poolRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  poolInfo: { flex: 1 },
-  poolName: { ...typography.h3, color: colors.text },
-  poolMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  poolInfo: { flex: 1, marginRight: spacing.sm },
+  poolName: { fontSize: 16, fontWeight: '800', color: colors.text },
+  poolMeta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   poolActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  badge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full },
-  badgeGreen: { backgroundColor: '#d1fae5' },
-  badgeGray: { backgroundColor: colors.border },
-  badgeText: { ...typography.caption, fontWeight: '600', color: colors.text },
+  badge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  badgeFinal: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent },
+  badgeGreen: { backgroundColor: colors.successLight, borderWidth: 1, borderColor: colors.primary + '40' },
+  badgeGray:  { backgroundColor: colors.borderLight, borderWidth: 1, borderColor: colors.border },
+  badgeText: { fontSize: 11, fontWeight: '700', color: colors.text },
   trashBtn: { padding: 4 },
-  validationError: { ...typography.caption, color: colors.error, marginTop: spacing.xs },
+  validationError: { fontSize: 11, color: colors.error, marginTop: spacing.xs },
+
+  // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
   },
   confirmContent: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.xl,
     width: '100%',
     maxWidth: 380,
     alignItems: 'center',
+    ...shadows.lg,
   },
-  confirmTitle: {
-    ...typography.h2,
-    color: colors.error,
-    textAlign: 'center',
+  confirmIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.errorLight,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  confirmQuestion: {
-    ...typography.body,
-    color: colors.text,
-    textAlign: 'center',
-  },
-  confirmPoolName: { fontWeight: '700' },
-  confirmWarning: {
-    ...typography.body,
+  confirmTitle: {
+    fontSize: 20,
+    fontWeight: '800',
     color: colors.error,
     textAlign: 'center',
-    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  confirmQuestion: {
+    fontSize: 15,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  confirmPoolName: { fontWeight: '800' },
+  confirmWarning: {
+    fontSize: 13,
+    color: colors.error,
+    textAlign: 'center',
+    marginTop: spacing.xs,
     fontWeight: '600',
   },
   errorBanner: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: colors.errorLight,
     borderWidth: 1,
-    borderColor: colors.error,
+    borderColor: colors.error + '40',
     borderRadius: radius.sm,
     padding: spacing.sm,
     width: '100%',
+    marginTop: spacing.md,
   },
   errorText: { color: colors.error, fontSize: 13 },
   modalButtons: { flexDirection: 'row', marginTop: spacing.lg, width: '100%' },

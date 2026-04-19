@@ -1,11 +1,6 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-} from 'react-native';
-import { colors, spacing, radius, typography } from './ui/theme';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { colors, spacing, radius, typography, shadows } from './ui/theme';
 import type { Match } from '@/types';
 
 interface MatchRowProps {
@@ -19,53 +14,14 @@ interface MatchRowProps {
 }
 
 const FLAG_MAP: Record<string, string> = {
-  MEX: '🇲🇽',
-  CRC: '🇨🇷',
-  ZAF: '🇿🇦',
-  CAN: '🇨🇦',
-  BIH: '🇧🇦',
-  QAT: '🇶🇦',
-  SUI: '🇨🇭',
-  BRA: '🇧🇷',
-  MAR: '🇲🇦',
-  HTI: '🇭🇹',
-  SCO: '🏴',
-  USA: '🇺🇸',
-  URU: '🇺🇾',
-  ESP: '🇪🇸',
-  POR: '🇵🇹',
-  ARG: '🇦🇷',
-  POL: '🇵🇱',
-  FRA: '🇫🇷',
-  BEL: '🇧🇪',
-  AUS: '🇦🇺',
-  KOR: '🇰🇷',
-  GER: '🇩🇪',
-  JPN: '🇯🇵',
-  NED: '🇳🇱',
-  SEN: '🇸🇳',
-  ENG: '🏴',
-  IRN: '🇮🇷',
-  ECU: '🇪🇨',
-  COL: '🇨🇴',
-  ITA: '🇮🇹',
-  PER: '🇵🇪',
-  CRO: '🇭🇷',
-  CIV: '🇨🇮',
-  DEN: '🇩🇰',
-  SRB: '🇷🇸',
-  CMR: '🇨🇲',
-  CHI: '🇨🇱',
-  GHA: '🇬🇭',
-  ALG: '🇩🇿',
-  TUR: '🇹🇷',
-  EGY: '🇪🇬',
-  VEN: '🇻🇪',
-  PAR: '🇵🇾',
-  RSA: '🇿🇦',
-  NZL: '🇳🇿',
-  UKR: '🇺🇦',
-  COD: '🇨🇩',
+  MEX:'🇲🇽',CRC:'🇨🇷',ZAF:'🇿🇦',CAN:'🇨🇦',BIH:'🇧🇦',QAT:'🇶🇦',
+  SUI:'🇨🇭',BRA:'🇧🇷',MAR:'🇲🇦',HTI:'🇭🇹',SCO:'🏴',USA:'🇺🇸',
+  URU:'🇺🇾',ESP:'🇪🇸',POR:'🇵🇹',ARG:'🇦🇷',POL:'🇵🇱',FRA:'🇫🇷',
+  BEL:'🇧🇪',AUS:'🇦🇺',KOR:'🇰🇷',GER:'🇩🇪',JPN:'🇯🇵',NED:'🇳🇱',
+  SEN:'🇸🇳',ENG:'🏴',IRN:'🇮🇷',ECU:'🇪🇨',COL:'🇨🇴',ITA:'🇮🇹',
+  PER:'🇵🇪',CRO:'🇭🇷',CIV:'🇨🇮',DEN:'🇩🇰',SRB:'🇷🇸',CMR:'🇨🇲',
+  CHI:'🇨🇱',GHA:'🇬🇭',ALG:'🇩🇿',TUR:'🇹🇷',EGY:'🇪🇬',VEN:'🇻🇪',
+  PAR:'🇵🇾',RSA:'🇿🇦',NZL:'🇳🇿',UKR:'🇺🇦',COD:'🇨🇩',
 };
 
 function getFlag(code: string) {
@@ -74,14 +30,22 @@ function getFlag(code: string) {
 
 function formatMatchDate(dateString: string) {
   const date = new Date(dateString);
-  return date.toLocaleString('en-US', {
+  return date.toLocaleString('es-MX', {
+    weekday: 'short',
     month: 'short',
     day: 'numeric',
-    weekday: 'short',
     hour: 'numeric',
     minute: '2-digit',
   });
 }
+
+const POINTS_CONFIG: Record<number, { bg: string; label: string }> = {
+  6: { bg: colors.primary,  label: '6 pts ★' },
+  4: { bg: colors.accent,   label: '4 pts' },
+  3: { bg: colors.navyMid,  label: '3 pts' },
+  1: { bg: colors.warning,  label: '1 pt' },
+  0: { bg: colors.textLight, label: '0 pts' },
+};
 
 export function MatchRow({
   match,
@@ -92,9 +56,13 @@ export function MatchRow({
   onAwayChange,
   pointsEarned,
 }: MatchRowProps) {
+  const hasPrediction = homeScore !== '' && awayScore !== '';
+  const pts = pointsEarned !== undefined ? POINTS_CONFIG[pointsEarned] ?? POINTS_CONFIG[0] : null;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, hasPrediction && !locked && styles.containerFilled]}>
       <View style={styles.mainRow}>
+        {/* Home team */}
         <View style={styles.teamBlockLeft}>
           <Text style={styles.teamName} numberOfLines={1}>
             {match.home_team}
@@ -102,32 +70,36 @@ export function MatchRow({
           <Text style={styles.flag}>{getFlag(match.home_team_code)}</Text>
         </View>
 
+        {/* Score inputs */}
         <View style={styles.centerBlock}>
           <TextInput
-            style={[styles.scoreInput, locked && styles.locked]}
+            style={[styles.scoreInput, locked && styles.scoreInputLocked, hasPrediction && !locked && styles.scoreInputFilled]}
             value={homeScore}
             onChangeText={onHomeChange}
             keyboardType="number-pad"
             maxLength={2}
             editable={!locked}
             selectTextOnFocus
-            placeholder="-"
-            placeholderTextColor={colors.textMuted}
+            placeholder="–"
+            placeholderTextColor={colors.textLight}
           />
-          <Text style={styles.separator}>-</Text>
+          <View style={styles.vsDivider}>
+            <Text style={styles.vsText}>VS</Text>
+          </View>
           <TextInput
-            style={[styles.scoreInput, locked && styles.locked]}
+            style={[styles.scoreInput, locked && styles.scoreInputLocked, hasPrediction && !locked && styles.scoreInputFilled]}
             value={awayScore}
             onChangeText={onAwayChange}
             keyboardType="number-pad"
             maxLength={2}
             editable={!locked}
             selectTextOnFocus
-            placeholder="-"
-            placeholderTextColor={colors.textMuted}
+            placeholder="–"
+            placeholderTextColor={colors.textLight}
           />
         </View>
 
+        {/* Away team */}
         <View style={styles.teamBlockRight}>
           <Text style={styles.flag}>{getFlag(match.away_team_code)}</Text>
           <Text style={styles.teamNameRight} numberOfLines={1}>
@@ -136,33 +108,37 @@ export function MatchRow({
         </View>
       </View>
 
-      <Text style={styles.dateText}>{formatMatchDate(match.match_date)}</Text>
-
-      {pointsEarned !== undefined && (
-        <View style={[styles.pointsBadge, getPointsStyle(pointsEarned)]}>
-          <Text style={styles.pointsText}>{pointsEarned} pts</Text>
-        </View>
-      )}
+      <View style={styles.metaRow}>
+        <Text style={styles.dateText}>{formatMatchDate(match.match_date)}</Text>
+        {pts && (
+          <View style={[styles.pointsBadge, { backgroundColor: pts.bg }]}>
+            <Text style={styles.pointsText}>{pts.label}</Text>
+          </View>
+        )}
+        {locked && !pts && (
+          <View style={styles.lockedBadge}>
+            <Text style={styles.lockedText}>🔒</Text>
+          </View>
+        )}
+      </View>
     </View>
   );
-}
-
-function getPointsStyle(pts: number) {
-  if (pts === 6) return { backgroundColor: colors.success };
-  if (pts >= 3) return { backgroundColor: colors.accent };
-  if (pts === 1) return { backgroundColor: colors.warning };
-  return { backgroundColor: colors.border };
 }
 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  containerFilled: {
+    borderColor: colors.primary + '55',
+    backgroundColor: '#FAFFFE',
   },
   mainRow: {
     flexDirection: 'row',
@@ -174,80 +150,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    minWidth: 0,
-    paddingRight: 8,
+    paddingRight: spacing.sm,
+    gap: spacing.xs,
   },
   teamBlockRight: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    minWidth: 0,
-    paddingLeft: 8,
+    paddingLeft: spacing.sm,
+    gap: spacing.xs,
   },
   teamName: {
-    ...typography.body,
+    fontSize: 13,
+    fontWeight: '700',
     color: colors.text,
-    fontWeight: '600',
-    marginRight: 6,
-    flexShrink: 1,
     textAlign: 'right',
+    flexShrink: 1,
   },
   teamNameRight: {
-    ...typography.body,
+    fontSize: 13,
+    fontWeight: '700',
     color: colors.text,
-    fontWeight: '600',
-    marginLeft: 6,
-    flexShrink: 1,
     textAlign: 'left',
+    flexShrink: 1,
   },
-  flag: {
-    fontSize: 16,
-  },
+  flag: { fontSize: 20 },
   centerBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.xs,
   },
   scoreInput: {
-    width: 30,
-    height: 30,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
     textAlign: 'center',
     color: colors.text,
-    backgroundColor: '#F9FAFB',
-    fontSize: 14,
-    fontWeight: '600',
+    backgroundColor: colors.background,
+    fontSize: 16,
+    fontWeight: '800',
     paddingVertical: 0,
   },
-  locked: {
-    backgroundColor: '#E5E7EB',
+  scoreInputFilled: {
+    borderColor: colors.primary,
+    backgroundColor: colors.successLight,
+    color: colors.primaryDark,
+  },
+  scoreInputLocked: {
+    backgroundColor: colors.borderLight,
+    borderColor: colors.border,
     color: colors.textMuted,
   },
-  separator: {
-    marginHorizontal: 6,
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '600',
+  vsDivider: {
+    width: 28,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.navy,
+    borderRadius: radius.xs,
+  },
+  vsText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.accent,
+    letterSpacing: 0.5,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
   dateText: {
-    marginTop: 8,
-    textAlign: 'center',
     fontSize: 11,
-    color: colors.textMuted,
+    color: colors.textLight,
+    fontWeight: '500',
   },
   pointsBadge: {
-    alignSelf: 'center',
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
   },
-  pointsText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  pointsText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  lockedBadge: {},
+  lockedText: { fontSize: 12 },
 });

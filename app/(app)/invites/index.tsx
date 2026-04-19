@@ -17,8 +17,7 @@ import { generateInviteLink } from '@/services/invites';
 import { removeMember } from '@/services/pools';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { colors, spacing, typography, radius } from '@/components/ui/theme';
+import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import type { PoolMember, Pool } from '@/types';
 
 export default function InvitesScreen() {
@@ -62,18 +61,18 @@ export default function InvitesScreen() {
     setSharing(false);
 
     if (linkError || !link) {
-      setError(linkError ?? 'Failed to generate invite link.');
+      setError(linkError ?? 'No se pudo generar el link de invitación.');
       return;
     }
 
     const message =
-      `Join my World Cup 2026 pool "${currentPool.name}"!\n` +
-      `Use this link to join:\n${link}`;
+      `¡Únete a mi quiniela del Mundial 2026 "${currentPool.name}"!\n` +
+      `Usa este link:\n${link}`;
 
     if (Platform.OS === 'web') {
       if (typeof navigator !== 'undefined' && navigator.share) {
         try {
-          await navigator.share({ title: `Join "${currentPool.name}"`, text: message, url: link });
+          await navigator.share({ title: `Únete a "${currentPool.name}"`, text: message, url: link });
           setShareSuccess(true);
         } catch {
           await copyToClipboard(message, link);
@@ -86,7 +85,7 @@ export default function InvitesScreen() {
         await Share.share({ message, url: link });
         setShareSuccess(true);
       } catch {
-        setError('Could not open share sheet.');
+        setError('No se pudo abrir el panel de compartir.');
       }
     }
   }
@@ -97,10 +96,10 @@ export default function InvitesScreen() {
         await navigator.clipboard.writeText(message);
         setShareSuccess(true);
       } else {
-        setError(`Copy this link manually:\n${link}`);
+        setError(`Copia este link manualmente:\n${link}`);
       }
     } catch {
-      setError(`Copy this link manually:\n${link}`);
+      setError(`Copia este link manualmente:\n${link}`);
     }
   }
 
@@ -120,53 +119,69 @@ export default function InvitesScreen() {
 
   if (!currentPool) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.noPool}>Select a pool from Home to manage invites.</Text>
+      <View style={styles.emptyScreen}>
+        <View style={styles.emptyIconWrap}>
+          <Ionicons name="link-outline" size={36} color={colors.accent} />
+        </View>
+        <Text style={styles.emptyTitle}>Sin quiniela activa</Text>
+        <Text style={styles.emptySubtitle}>Selecciona una quiniela desde Inicio para gestionar invitaciones.</Text>
       </View>
     );
   }
+
+  const spotsLeft = currentPool.max_members - members.length;
 
   return (
     <View style={styles.screen}>
       <PoolSelectorBar onPoolChange={(pool) => loadData(pool)} />
 
-      {/* Invite card — admin only */}
+      {/* Invite hero card — admin only */}
       {isAdmin && (
-        <Card style={styles.inviteCard}>
-          <Text style={styles.inviteCardTitle}>Invite Members</Text>
-          <Text style={styles.inviteCardSub}>
-            Share a reusable invite link. Pool supports up to {currentPool.max_members} members.
-          </Text>
+        <View style={styles.inviteHero}>
+          <View style={styles.inviteHeroLeft}>
+            <Text style={styles.inviteHeroTitle}>Invitar Participantes</Text>
+            <Text style={styles.inviteHeroSub}>
+              {spotsLeft > 0
+                ? `${spotsLeft} lugar${spotsLeft !== 1 ? 'es' : ''} disponible${spotsLeft !== 1 ? 's' : ''} de ${currentPool.max_members}`
+                : 'Quiniela llena'}
+            </Text>
+          </View>
+          <View style={styles.inviteHeroRight}>
+            <Ionicons name="link" size={28} color={colors.accentBright} />
+          </View>
 
           {error && (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+              <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+              <Text style={styles.errorText}> {error}</Text>
             </View>
           )}
-
           {removeError && (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{removeError}</Text>
+              <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+              <Text style={styles.errorText}> {removeError}</Text>
             </View>
           )}
-
           {shareSuccess && (
             <View style={styles.successBanner}>
+              <Ionicons name="checkmark-circle-outline" size={14} color={colors.success} />
               <Text style={styles.successText}>
-                {Platform.OS === 'web' ? 'Invite copied to clipboard!' : 'Invite shared!'}
+                {' '}{Platform.OS === 'web' ? '¡Link copiado al portapapeles!' : '¡Invitación compartida!'}
               </Text>
             </View>
           )}
 
           <Button
-            title={sharing ? 'Preparing…' : 'Share Invite Link'}
+            title={sharing ? 'Generando link…' : 'Compartir Link de Invitación'}
+            icon="share-social-outline"
             onPress={handleShare}
             loading={sharing}
             style={{ marginTop: spacing.md }}
           />
-        </Card>
+        </View>
       )}
 
+      {/* Members list */}
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
       ) : (
@@ -176,41 +191,53 @@ export default function InvitesScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <View style={styles.listHeader}>
-              <Text style={styles.sectionTitle}>
-                Members ({members.length}/{currentPool.max_members})
-              </Text>
+              <View style={styles.listHeaderLeft}>
+                <Text style={styles.listHeaderTitle}>Participantes</Text>
+                <View style={styles.memberCountBadge}>
+                  <Text style={styles.memberCountText}>
+                    {members.length}/{currentPool.max_members}
+                  </Text>
+                </View>
+              </View>
             </View>
           }
           renderItem={({ item: member }) => {
             const isPendingRemove = confirmRemoveId === member.user_id;
             const isRemoving = removing === member.user_id;
+            const isMe = member.user_id === user?.id;
+            const initial = (member.profile?.username?.[0] ?? '?').toUpperCase();
+            const isOwner = member.role === 'admin';
 
             return (
-              <Card style={styles.memberCard}>
+              <View style={styles.memberCard}>
                 <View style={styles.memberRow}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {(member.profile?.username?.[0] ?? '?').toUpperCase()}
-                    </Text>
+                  <View style={[styles.avatar, isMe && styles.avatarMe]}>
+                    <Text style={styles.avatarText}>{initial}</Text>
                   </View>
                   <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>
-                      {member.profile?.username ?? 'Unknown'}
-                    </Text>
-                    <View style={styles.roleBadge}>
-                      <Text style={styles.roleText}>{member.role}</Text>
+                    <View style={styles.memberNameRow}>
+                      <Text style={styles.memberName}>
+                        {member.profile?.username ?? 'Desconocido'}
+                      </Text>
+                      {isMe && <Text style={styles.meTag}> (tú)</Text>}
+                    </View>
+                    <View style={[styles.roleBadge, isOwner && styles.roleBadgeAdmin]}>
+                      <Text style={[styles.roleText, isOwner && styles.roleTextAdmin]}>
+                        {isOwner ? 'Admin' : 'Miembro'}
+                      </Text>
                     </View>
                   </View>
-                  {member.user_id === user?.id ? (
-                    <Ionicons name="person" size={20} color={colors.primary} />
+                  {isMe ? (
+                    <Ionicons name="person-circle-outline" size={22} color={colors.primary} />
                   ) : isAdmin ? (
                     <TouchableOpacity
                       onPress={() =>
                         setConfirmRemoveId(isPendingRemove ? null : member.user_id)
                       }
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <Ionicons
-                        name={isPendingRemove ? 'chevron-up' : 'close-circle'}
+                        name={isPendingRemove ? 'chevron-up' : 'close-circle-outline'}
                         size={24}
                         color={isPendingRemove ? colors.textMuted : colors.error}
                       />
@@ -218,34 +245,40 @@ export default function InvitesScreen() {
                   ) : null}
                 </View>
 
-                {/* Inline remove confirm */}
                 {isPendingRemove && (
                   <View style={styles.confirmRow}>
                     <Text style={styles.confirmText}>
-                      Remove {member.profile?.username ?? 'this member'}?
+                      ¿Eliminar a {member.profile?.username ?? 'este miembro'}?
                     </Text>
                     <View style={styles.confirmBtns}>
                       <TouchableOpacity
                         style={styles.confirmCancel}
                         onPress={() => setConfirmRemoveId(null)}
                       >
-                        <Text style={styles.confirmCancelText}>Cancel</Text>
+                        <Text style={styles.confirmCancelText}>Cancelar</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.confirmRemove}
                         onPress={() => handleConfirmRemove(member.user_id)}
                         disabled={isRemoving}
                       >
-                        <Text style={styles.confirmRemoveText}>
-                          {isRemoving ? 'Removing…' : 'Remove'}
-                        </Text>
+                        {isRemoving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.confirmRemoveText}>Eliminar</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
                 )}
-              </Card>
+              </View>
             );
           }}
+          ListEmptyComponent={
+            <View style={styles.emptyList}>
+              <Text style={styles.emptyListText}>Sin miembros aún</Text>
+            </View>
+          }
         />
       )}
     </View>
@@ -254,54 +287,109 @@ export default function InvitesScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  noPool: { ...typography.body, color: colors.textMuted },
-  inviteCard: { margin: spacing.md, marginBottom: 0 },
-  inviteCardTitle: { ...typography.h3, color: colors.text },
-  inviteCardSub: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+
+  emptyScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
+  emptySubtitle: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+
+  inviteHero: {
+    backgroundColor: colors.primaryDark,
+    padding: spacing.md,
+    margin: spacing.md,
+    borderRadius: radius.lg,
+    ...shadows.md,
+  },
+  inviteHeroLeft: { flex: 1 },
+  inviteHeroRight: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    opacity: 0.5,
+  },
+  inviteHeroTitle: { ...typography.h3, color: '#fff', marginBottom: 2 },
+  inviteHeroSub: { ...typography.caption, color: 'rgba(255,255,255,0.6)' },
+
   errorBanner: {
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: colors.error,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(192,57,43,0.15)',
     borderRadius: radius.sm,
     padding: spacing.sm,
     marginTop: spacing.sm,
   },
-  errorText: { ...typography.caption, color: colors.error },
+  errorText: { ...typography.caption, color: '#ffb3ae' },
   successBanner: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: colors.success,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(10,107,53,0.25)',
     borderRadius: radius.sm,
     padding: spacing.sm,
     marginTop: spacing.sm,
   },
-  successText: { ...typography.caption, color: colors.success, fontWeight: '600' },
-  listHeader: { marginBottom: spacing.xs },
+  successText: { ...typography.caption, color: '#86efac', fontWeight: '600' },
+
   list: { padding: spacing.md, paddingBottom: spacing.xxl },
-  sectionTitle: { ...typography.label, color: colors.textMuted },
-  memberCard: { marginBottom: spacing.sm, padding: spacing.sm + 4 },
+  listHeader: { marginBottom: spacing.sm },
+  listHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  listHeaderTitle: { ...typography.label, color: colors.text },
+  memberCountBadge: {
+    backgroundColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  memberCountText: { ...typography.tiny, color: colors.textMuted, fontWeight: '600' },
+
+  memberCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
   memberRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: radius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.navyMid,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  avatarText: { ...typography.body, color: '#fff', fontWeight: '700' },
+  avatarMe: { backgroundColor: colors.primary },
+  avatarText: { ...typography.label, color: '#fff', fontWeight: '700' },
   memberInfo: { flex: 1 },
-  memberName: { ...typography.body, color: colors.text, fontWeight: '600' },
+  memberNameRow: { flexDirection: 'row', alignItems: 'baseline' },
+  memberName: { ...typography.bodyMd, color: colors.text },
+  meTag: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   roleBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.border,
+    backgroundColor: colors.borderLight,
     paddingHorizontal: spacing.xs,
-    borderRadius: radius.sm,
-    marginTop: 2,
+    paddingVertical: 1,
+    borderRadius: radius.xs,
+    marginTop: 3,
   },
-  roleText: { ...typography.caption, color: colors.textMuted },
+  roleBadgeAdmin: { backgroundColor: colors.accentLight },
+  roleText: { ...typography.tiny, color: colors.textMuted },
+  roleTextAdmin: { color: colors.accent, fontWeight: '600' },
+
   confirmRow: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
@@ -327,4 +415,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   confirmRemoveText: { ...typography.caption, color: '#fff', fontWeight: '600' },
+
+  emptyList: { alignItems: 'center', paddingVertical: spacing.lg },
+  emptyListText: { ...typography.body, color: colors.textMuted },
 });

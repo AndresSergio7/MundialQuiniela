@@ -5,14 +5,14 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePendingInviteStore } from '@/store/pendingInvite';
 import { joinViaInvite } from '@/services/invites';
 import { usePool } from '@/hooks/usePool';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { colors, spacing, typography, radius } from '@/components/ui/theme';
+import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 
 type JoinStatus = 'loading' | 'joining' | 'success' | 'error' | 'auth_needed';
 
@@ -23,7 +23,7 @@ export default function JoinScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const { setPendingInvite } = usePendingInviteStore();
-  const { fetchPools, setCurrentPool } = usePool();
+  const { fetchPools } = usePool();
 
   const [status, setStatus] = useState<JoinStatus>('loading');
   const [message, setMessage] = useState('');
@@ -32,14 +32,13 @@ export default function JoinScreen() {
   useEffect(() => {
     if (!poolId || !token) {
       setStatus('error');
-      setMessage('This invite link is missing required parameters.');
+      setMessage('Este link de invitación no tiene los parámetros requeridos.');
       return;
     }
 
     if (user) {
       attemptJoin(user.id, poolId, token);
     } else {
-      // Store for after auth; show auth options
       setPendingInvite(poolId, token);
       setStatus('auth_needed');
     }
@@ -52,60 +51,77 @@ export default function JoinScreen() {
     if (success) {
       await fetchPools();
       setStatus('success');
-      setTimeout(() => router.replace('/(app)'), 1200);
+      setTimeout(() => router.replace('/(app)'), 1400);
     } else {
       setStatus('error');
-      // Friendly error messages
       const friendly: Record<string, string> = {
-        'Pool is full.': 'This pool has reached its member limit.',
-        'Already a member of this pool.': "You're already a member of this pool.",
-        'Pool is not active or does not exist.': 'This pool is no longer accepting members.',
-        'Invalid invite token.': 'This invite link is invalid or has been changed.',
-        'Pool not found.': 'This pool no longer exists.',
+        'Pool is full.': 'Esta quiniela ya alcanzó su límite de participantes.',
+        'Already a member of this pool.': 'Ya eres miembro de esta quiniela.',
+        'Pool is not active or does not exist.': 'Esta quiniela ya no acepta nuevos miembros.',
+        'Invalid invite token.': 'Este link es inválido o ha sido cambiado.',
+        'Pool not found.': 'Esta quiniela ya no existe.',
       };
-      setMessage(friendly[error ?? ''] ?? error ?? 'Could not join pool. Please try again.');
+      setMessage(friendly[error ?? ''] ?? error ?? 'No se pudo unir a la quiniela. Intenta de nuevo.');
     }
   }
 
   if (!poolId || !token) {
     return (
-      <View style={styles.centered}>
-        <Card style={styles.card}>
-          <Text style={styles.title}>Invalid Link</Text>
+      <View style={styles.screen}>
+        <View style={styles.content}>
+          <View style={[styles.iconCircle, styles.iconCircleError]}>
+            <Ionicons name="alert-circle-outline" size={36} color={colors.error} />
+          </View>
+          <Text style={styles.title}>Link Inválido</Text>
           <Text style={styles.subtitle}>
-            This invite link is missing required information.
+            Este link de invitación no tiene la información necesaria.
           </Text>
           <Button
-            title="Go to Home"
+            title="Ir al inicio"
             onPress={() => router.replace(user ? '/(app)' : '/(auth)/login')}
-            style={{ marginTop: spacing.lg }}
+            style={{ marginTop: spacing.xl }}
           />
-        </Card>
+        </View>
       </View>
     );
   }
 
   if (status === 'loading' || status === 'joining') {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.hint}>
-          {status === 'joining' ? 'Joining pool…' : 'Loading…'}
-        </Text>
+      <View style={styles.screen}>
+        <View style={styles.content}>
+          <View style={[styles.iconCircle, styles.iconCirclePrimary]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+          <Text style={styles.title}>
+            {status === 'joining' ? 'Uniéndote…' : 'Cargando…'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {status === 'joining'
+              ? 'Procesando tu invitación al mundial 2026'
+              : 'Verificando link de invitación'}
+          </Text>
+        </View>
       </View>
     );
   }
 
   if (status === 'success') {
     return (
-      <View style={styles.centered}>
-        <Card style={styles.successCard}>
-          <Text style={styles.successTitle}>You're in!</Text>
+      <View style={styles.screen}>
+        <View style={styles.content}>
+          <View style={[styles.iconCircle, styles.iconCircleSuccess]}>
+            <Ionicons name="trophy" size={36} color={colors.accent} />
+          </View>
+          <Text style={[styles.title, { color: colors.success }]}>¡Ya estás dentro!</Text>
           <Text style={styles.subtitle}>
-            {poolName ? `Welcome to "${poolName}".` : 'You joined the pool successfully.'}
+            {poolName ? `Bienvenido a "${poolName}".` : 'Te uniste a la quiniela con éxito.'}
           </Text>
-          <Text style={styles.hint}>Redirecting to your pool…</Text>
-        </Card>
+          <View style={styles.redirectHint}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.redirectText}>Redirigiendo a tu quiniela…</Text>
+          </View>
+        </View>
       </View>
     );
   }
@@ -113,24 +129,30 @@ export default function JoinScreen() {
   if (status === 'auth_needed') {
     return (
       <View style={styles.screen}>
-        <View style={styles.centered}>
-          <Card style={styles.card}>
-            <Text style={styles.title}>You're Invited!</Text>
-            <Text style={styles.subtitle}>
-              Create an account or sign in to join this World Cup 2026 pool.
-            </Text>
-            <Button
-              title="Create Account"
-              onPress={() => router.push('/(auth)/register')}
-              style={{ marginTop: spacing.lg }}
-            />
-            <Button
-              title="Sign In"
-              variant="outline"
-              onPress={() => router.push('/(auth)/login')}
-              style={{ marginTop: spacing.sm }}
-            />
-          </Card>
+        {/* Dark hero */}
+        <View style={styles.hero}>
+          <View style={[styles.iconCircle, { backgroundColor: 'rgba(201,168,76,0.18)' }]}>
+            <Ionicons name="trophy" size={36} color={colors.accentBright} />
+          </View>
+          <Text style={styles.heroTitle}>¡Estás Invitado!</Text>
+          <Text style={styles.heroSubtitle}>
+            Crea una cuenta o inicia sesión para unirte a la quiniela del Mundial 2026.
+          </Text>
+        </View>
+
+        <View style={styles.authButtons}>
+          <Button
+            title="Crear Cuenta"
+            icon="person-add-outline"
+            onPress={() => router.push('/(auth)/register')}
+          />
+          <Button
+            title="Iniciar Sesión"
+            variant="outline"
+            icon="log-in-outline"
+            onPress={() => router.push('/(auth)/login')}
+            style={{ marginTop: spacing.sm }}
+          />
         </View>
       </View>
     );
@@ -138,75 +160,83 @@ export default function JoinScreen() {
 
   // error state
   return (
-    <View style={styles.centered}>
-      <Card style={styles.card}>
-        <Text style={styles.errorTitle}>Couldn't Join</Text>
+    <View style={styles.screen}>
+      <View style={styles.content}>
+        <View style={[styles.iconCircle, styles.iconCircleError]}>
+          <Ionicons name="close-circle-outline" size={36} color={colors.error} />
+        </View>
+        <Text style={[styles.title, { color: colors.error }]}>No se pudo unir</Text>
         <Text style={styles.errorMessage}>{message}</Text>
         {user ? (
           <Button
-            title="Go to Home"
+            title="Ir al inicio"
             onPress={() => router.replace('/(app)')}
-            style={{ marginTop: spacing.lg }}
+            style={{ marginTop: spacing.xl }}
           />
         ) : (
           <>
             <Button
-              title="Create Account"
+              title="Crear Cuenta"
               onPress={() => router.push('/(auth)/register')}
-              style={{ marginTop: spacing.lg }}
+              style={{ marginTop: spacing.xl }}
             />
             <Button
-              title="Sign In"
+              title="Iniciar Sesión"
               variant="outline"
               onPress={() => router.push('/(auth)/login')}
               style={{ marginTop: spacing.sm }}
             />
           </>
         )}
-      </Card>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  centered: {
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.lg,
-    backgroundColor: colors.background,
+    padding: spacing.xl,
   },
-  card: {
-    width: '100%',
-    maxWidth: 400,
+  hero: {
+    backgroundColor: colors.primaryDark,
+    padding: spacing.xxl,
+    paddingTop: spacing.xxxl,
     alignItems: 'center',
-    paddingVertical: spacing.xl,
   },
-  successCard: {
-    width: '100%',
-    maxWidth: 400,
+  heroTitle: { ...typography.h1, color: '#fff', textAlign: 'center', marginTop: spacing.md },
+  heroSubtitle: {
+    ...typography.body,
+    color: 'rgba(255,255,255,0.65)',
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  authButtons: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    padding: spacing.xl,
+    paddingTop: spacing.xxl,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: radius.full,
     alignItems: 'center',
-    paddingVertical: spacing.xl,
-    backgroundColor: '#f0fdf4',
-    borderWidth: 2,
-    borderColor: colors.success,
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
+  iconCirclePrimary: { backgroundColor: colors.successLight },
+  iconCircleSuccess: { backgroundColor: colors.accentLight },
+  iconCircleError: { backgroundColor: colors.errorLight },
   title: {
     ...typography.h2,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  successTitle: {
-    ...typography.h2,
-    color: colors.success,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  errorTitle: {
-    ...typography.h3,
-    color: colors.error,
+    color: colors.text,
     textAlign: 'center',
     marginBottom: spacing.sm,
   },
@@ -221,10 +251,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
-  hint: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.md,
+  redirectHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
   },
+  redirectText: { ...typography.caption, color: colors.textMuted },
 });

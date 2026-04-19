@@ -17,11 +17,14 @@ import { createPool } from '@/services/pools';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { colors, spacing, typography, radius } from '@/components/ui/theme';
+import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { POOL_PLANS } from '@/types';
 import type { PoolPlanId, Entitlement } from '@/types';
 
 const isWeb = Platform.OS === 'web';
+
+const PLAN_ICONS = ['people-outline', 'people-outline', 'people-outline', 'globe-outline'] as const;
+const POPULAR_PLAN_IDX = 1;
 
 export default function PurchaseScreen() {
   const router = useRouter();
@@ -32,7 +35,6 @@ export default function PurchaseScreen() {
   const [unusedEntitlements, setUnusedEntitlements] = useState<Entitlement[]>([]);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
-  // Name modal (shown after a successful purchase or when picking an unused entitlement)
   const [showNameModal, setShowNameModal] = useState(false);
   const [poolName, setPoolName] = useState('');
   const [selectedEntitlementId, setSelectedEntitlementId] = useState<string | null>(null);
@@ -54,7 +56,6 @@ export default function PurchaseScreen() {
       .order('created_at', { ascending: true });
     const list = (data ?? []) as Entitlement[];
     setUnusedEntitlements(list);
-    // Keep auth store in sync with the oldest unused entitlement (for gate checks)
     if (list.length > 0) setEntitlement(list[0]);
   }
 
@@ -68,7 +69,6 @@ export default function PurchaseScreen() {
 
     if (success) {
       await refreshUnused();
-      // Open the name modal right away — entitlementId will be resolved in handleCreatePool (FIFO)
       setPoolName('');
       setCreateError('');
       setSelectedEntitlementId(null);
@@ -119,14 +119,20 @@ export default function PurchaseScreen() {
   return (
     <>
       <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Crear Quiniela</Text>
-          <Text style={styles.subtitle}>
+
+        {/* Hero header */}
+        <View style={styles.hero}>
+          <View style={styles.heroIconWrap}>
+            <Ionicons name="trophy" size={36} color={colors.accent} />
+          </View>
+          <Text style={styles.heroTitle}>Crear Quiniela</Text>
+          <Text style={styles.heroSubtitle}>
             Cada compra te permite crear una quiniela con el límite de participantes elegido.
           </Text>
           {isWeb && (
             <View style={styles.webNote}>
-              <Text style={styles.webNoteText}>Modo demo — la compra es simulada en web</Text>
+              <Ionicons name="information-circle-outline" size={14} color="#92400e" />
+              <Text style={styles.webNoteText}> Modo demo — la compra es simulada en web</Text>
             </View>
           )}
         </View>
@@ -134,90 +140,118 @@ export default function PurchaseScreen() {
         {/* Purchase error */}
         {purchaseError && (
           <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{purchaseError}</Text>
+            <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
+            <Text style={styles.errorText}> {purchaseError}</Text>
           </View>
         )}
 
-        {/* Unused entitlements — one card per purchase, each with its own Create button */}
+        {/* Unused entitlements */}
         {unusedEntitlements.length > 0 && (
-          <>
-            <Text style={styles.sectionLabel}>
-              {unusedEntitlements.length === 1
-                ? 'Tienes 1 compra disponible'
-                : `Tienes ${unusedEntitlements.length} compras disponibles`}
-            </Text>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>
+                {unusedEntitlements.length === 1
+                  ? 'Tienes 1 compra disponible'
+                  : `Tienes ${unusedEntitlements.length} compras disponibles`}
+              </Text>
+            </View>
             {unusedEntitlements.map((ent) => (
-              <Card key={ent.id} style={styles.entitlementCard}>
-                <View style={styles.entitlementRow}>
-                  <View style={styles.entitlementInfo}>
+              <View key={ent.id} style={styles.entitlementCard}>
+                <View style={styles.entitlementAccent} />
+                <View style={styles.entitlementBody}>
+                  <View style={styles.entitlementIconWrap}>
                     <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-                    <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-                      <Text style={styles.entitlementTitle}>
-                        Quiniela para {ent.base_slots} participantes
-                      </Text>
-                      <Text style={styles.entitlementSub}>
-                        Lista para usar — sin costo adicional
-                      </Text>
-                    </View>
+                  </View>
+                  <View style={styles.entitlementInfo}>
+                    <Text style={styles.entitlementTitle}>
+                      Quiniela para {ent.base_slots} participantes
+                    </Text>
+                    <Text style={styles.entitlementSub}>Lista — sin costo adicional</Text>
                   </View>
                   <Button
                     title="Crear"
+                    size="sm"
                     onPress={() => openNameModalForEntitlement(ent)}
                     fullWidth={false}
-                    style={styles.entitlementBtn}
                   />
                 </View>
-              </Card>
+              </View>
             ))}
-          </>
+          </View>
         )}
 
-        {/* 4-tier plan cards */}
-        <Text style={styles.sectionLabel}>
-          {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
-        </Text>
+        {/* Plan cards */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionDot} />
+            <Text style={styles.sectionLabel}>
+              {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
+            </Text>
+          </View>
 
-        {POOL_PLANS.map((plan) => {
-          const isBuying = purchasing === plan.id;
-          return (
-            <Card key={plan.id} style={styles.planCard}>
-              <View style={styles.planHeader}>
-                <View>
-                  <Text style={styles.planLabel}>{plan.slots} participantes</Text>
-                  <Text style={styles.planDesc}>Crea 1 quiniela con hasta {plan.slots} participantes</Text>
+          {POOL_PLANS.map((plan, idx) => {
+            const isBuying = purchasing === plan.id;
+            const isPopular = idx === POPULAR_PLAN_IDX;
+            return (
+              <View key={plan.id} style={[styles.planCard, isPopular && styles.planCardPopular]}>
+                {isPopular && (
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularBadgeText}>MÁS POPULAR</Text>
+                  </View>
+                )}
+                <View style={styles.planTop}>
+                  <View style={styles.planIconWrap}>
+                    <Ionicons name={PLAN_ICONS[idx] ?? 'people-outline'} size={20} color={isPopular ? colors.accent : colors.primary} />
+                  </View>
+                  <View style={styles.planInfo}>
+                    <Text style={[styles.planSlots, isPopular && styles.planSlotsPopular]}>
+                      {plan.slots} participantes
+                    </Text>
+                    <Text style={styles.planDesc}>
+                      Crea 1 quiniela con hasta {plan.slots} personas
+                    </Text>
+                  </View>
+                  <Text style={[styles.planPrice, isPopular && styles.planPricePopular]}>
+                    {plan.priceLabel}
+                  </Text>
                 </View>
-                <Text style={styles.planPrice}>{plan.priceLabel}</Text>
-              </View>
-              <View style={styles.planFeatures}>
-                <PlanFeature text="Predicciones para los 72 partidos" />
-                <PlanFeature text="Tabla de posiciones en vivo" />
-                <PlanFeature text="Link de invitación reutilizable" />
-              </View>
-              <Button
-                title={
-                  isBuying
-                    ? 'Procesando…'
-                    : isWeb
-                    ? `Comprar — ${plan.priceLabel} (Demo)`
-                    : `Comprar — ${plan.priceLabel}`
-                }
-                onPress={() => handlePurchase(plan.id as PoolPlanId)}
-                loading={isBuying}
-                disabled={purchasing !== null && !isBuying}
-                style={{ marginTop: spacing.md }}
-              />
-            </Card>
-          );
-        })}
 
-        {/* Contact Us >100 */}
-        <Card style={styles.contactCard}>
-          <View style={styles.planHeader}>
-            <View>
-              <Text style={styles.planLabel}>+100 participantes</Text>
-              <Text style={styles.planDesc}>¿Necesitas un grupo más grande? Contáctanos.</Text>
+                <View style={styles.planFeatures}>
+                  <PlanFeature text="72 partidos del mundial" gold={isPopular} />
+                  <PlanFeature text="Tabla de posiciones en vivo" gold={isPopular} />
+                  <PlanFeature text="Link de invitación reutilizable" gold={isPopular} />
+                </View>
+
+                <Button
+                  title={
+                    isBuying
+                      ? 'Procesando…'
+                      : isWeb
+                      ? `Comprar — ${plan.priceLabel} (Demo)`
+                      : `Comprar — ${plan.priceLabel}`
+                  }
+                  variant={isPopular ? 'gold' : 'primary'}
+                  onPress={() => handlePurchase(plan.id as PoolPlanId)}
+                  loading={isBuying}
+                  disabled={purchasing !== null && !isBuying}
+                  style={{ marginTop: spacing.md }}
+                />
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Contact card */}
+        <View style={styles.contactCard}>
+          <View style={styles.contactRow}>
+            <View style={styles.contactIconWrap}>
+              <Ionicons name="mail-outline" size={22} color={colors.navyMid} />
             </View>
-            <Ionicons name="mail-outline" size={24} color={colors.primary} />
+            <View style={styles.contactInfo}>
+              <Text style={styles.contactTitle}>+100 participantes</Text>
+              <Text style={styles.contactSub}>¿Necesitas un grupo más grande? Contáctanos.</Text>
+            </View>
           </View>
           <Button
             title="Contáctanos"
@@ -225,36 +259,33 @@ export default function PurchaseScreen() {
             onPress={() => {}}
             style={{ marginTop: spacing.md }}
           />
-        </Card>
+        </View>
 
         {!isWeb && (
           <Button
             title={restoring ? 'Restaurando…' : 'Restaurar Compras'}
-            variant="outline"
+            variant="ghost"
             onPress={handleRestore}
             loading={restoring}
-            style={{ marginTop: spacing.lg }}
+            style={{ marginTop: spacing.sm }}
           />
         )}
 
         <Text style={styles.legal}>
           {isWeb
             ? 'Modo demo — no se procesa ningún pago real.'
-            : 'Pago procesado por App Store / Google Play. Una compra por quiniela.'}
+            : 'Pago procesado por App Store / Google Play.\nUna compra por quiniela creada.'}
         </Text>
       </ScrollView>
 
-      {/* Name modal — shown after successful purchase or from entitlement card */}
+      {/* Name modal */}
       <Modal visible={showNameModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons
-              name="trophy"
-              size={40}
-              color={colors.primary}
-              style={{ alignSelf: 'center', marginBottom: spacing.md }}
-            />
-            <Text style={styles.modalTitle}>¡Ponle nombre a tu quiniela!</Text>
+            <View style={styles.modalIconWrap}>
+              <Ionicons name="trophy" size={28} color={colors.accent} />
+            </View>
+            <Text style={styles.modalTitle}>¡Ponle nombre!</Text>
             <Text style={styles.modalSubtitle}>
               {selectedEntitlementId
                 ? `Capacidad: ${unusedEntitlements.find(e => e.id === selectedEntitlementId)?.base_slots ?? '?'} participantes`
@@ -288,6 +319,7 @@ export default function PurchaseScreen() {
                 />
                 <Button
                   title="Crear"
+                  variant="gold"
                   onPress={handleCreatePool}
                   disabled={!poolName.trim()}
                   fullWidth={false}
@@ -302,10 +334,10 @@ export default function PurchaseScreen() {
   );
 }
 
-function PlanFeature({ text }: { text: string }) {
+function PlanFeature({ text, gold }: { text: string; gold?: boolean }) {
   return (
     <View style={styles.featureRow}>
-      <Ionicons name="checkmark" size={14} color={colors.success} />
+      <Ionicons name="checkmark" size={14} color={gold ? colors.accent : colors.success} />
       <Text style={styles.featureText}>{text}</Text>
     </View>
   );
@@ -313,11 +345,34 @@ function PlanFeature({ text }: { text: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.md, paddingBottom: spacing.xxl },
-  header: { alignItems: 'center', paddingVertical: spacing.xl },
-  title: { ...typography.h1, color: colors.primary },
-  subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
+  container: { paddingBottom: spacing.xxl },
+
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.primaryDark,
+  },
+  heroIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(201,168,76,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  heroTitle: { ...typography.h1, color: '#fff', textAlign: 'center' },
+  heroSubtitle: {
+    ...typography.body,
+    color: 'rgba(255,255,255,0.65)',
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
   webNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fef9c3',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
@@ -325,72 +380,163 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   webNoteText: { ...typography.caption, color: '#92400e' },
+
   errorBanner: {
-    backgroundColor: '#fef2f2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.errorLight,
     borderWidth: 1,
     borderColor: colors.error,
     borderRadius: radius.sm,
     padding: spacing.sm,
-    marginBottom: spacing.md,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
   },
   errorText: { ...typography.caption, color: colors.error },
-  entitlementCard: {
-    marginBottom: spacing.sm,
-    backgroundColor: '#f0fdf4',
-    borderWidth: 2,
-    borderColor: colors.success,
-  },
-  entitlementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  entitlementInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+
+  section: { paddingHorizontal: spacing.md, paddingTop: spacing.lg },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  sectionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accent,
     marginRight: spacing.sm,
   },
+  sectionLabel: { ...typography.label, color: colors.textMuted },
+
+  entitlementCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  entitlementAccent: { width: 4, backgroundColor: colors.success },
+  entitlementBody: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  entitlementIconWrap: { marginRight: spacing.xs },
+  entitlementInfo: { flex: 1 },
   entitlementTitle: { ...typography.label, color: colors.success, fontWeight: '700' },
   entitlementSub: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-  entitlementBtn: { paddingHorizontal: spacing.md },
-  sectionLabel: { ...typography.label, color: colors.textMuted, marginBottom: spacing.sm, marginTop: spacing.xs },
-  planCard: { marginBottom: spacing.md },
-  planHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+
+  planCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  planCardPopular: {
+    borderColor: colors.accent,
+    borderWidth: 2,
+    ...shadows.gold,
+  },
+  popularBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
     marginBottom: spacing.sm,
   },
-  planLabel: { ...typography.h3, color: colors.text },
+  popularBadgeText: {
+    ...typography.tiny,
+    color: colors.accent,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  planTop: { flexDirection: 'row', alignItems: 'center' },
+  planIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  planInfo: { flex: 1 },
+  planSlots: { ...typography.h4, color: colors.text },
+  planSlotsPopular: { color: colors.navyMid },
   planDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   planPrice: { ...typography.h2, color: colors.primary },
-  planFeatures: { marginTop: spacing.xs },
+  planPricePopular: { color: colors.accent },
+  planFeatures: { marginTop: spacing.sm },
   featureRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs, gap: spacing.xs },
   featureText: { ...typography.caption, color: colors.text, flex: 1 },
-  contactCard: { marginBottom: spacing.md },
+
+  contactCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contactRow: { flexDirection: 'row', alignItems: 'center' },
+  contactIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  contactInfo: { flex: 1 },
+  contactTitle: { ...typography.label, color: colors.text },
+  contactSub: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+
   legal: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textLight,
     textAlign: 'center',
     marginTop: spacing.lg,
+    marginHorizontal: spacing.xl,
     lineHeight: 18,
   },
+
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
   },
   modalContent: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.xl,
     width: '100%',
     maxWidth: 400,
+    ...shadows.lg,
+  },
+  modalIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: spacing.md,
   },
   modalTitle: { ...typography.h2, color: colors.text, textAlign: 'center', marginBottom: spacing.xs },
-  modalSubtitle: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg },
+  modalSubtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
   modalButtons: { flexDirection: 'row', marginTop: spacing.lg },
 });
