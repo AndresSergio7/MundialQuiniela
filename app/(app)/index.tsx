@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePool } from '@/hooks/usePool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
@@ -36,17 +36,19 @@ export default function HomeScreen() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function init() {
-      if (user && pendingPoolId && pendingToken) {
-        await joinViaInvite(user.id, pendingPoolId, pendingToken);
-        clearPendingInvite();
+  useFocusEffect(
+    useCallback(() => {
+      async function init() {
+        if (user && pendingPoolId && pendingToken) {
+          await joinViaInvite(user.id, pendingPoolId, pendingToken);
+          clearPendingInvite();
+        }
+        fetchPools();
       }
-      fetchPools();
-    }
-    init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, pendingPoolId, pendingToken]),
+  );
 
   useEffect(() => {
     if (!user || !pools.length) { setSubmissions({}); return; }
