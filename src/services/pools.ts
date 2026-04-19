@@ -22,7 +22,12 @@ export async function createPool(
     query = query.order('created_at', { ascending: true });
   }
 
-  const { data: ent } = await query.limit(1).maybeSingle();
+  const { data: ent, error: entErr } = await query.limit(1).maybeSingle();
+
+  if (entErr) {
+    console.error('createPool: entitlement query error', entErr);
+    return { pool: null, error: entErr.message };
+  }
 
   if (!ent?.has_app_access) {
     return { pool: null, error: 'PURCHASE_REQUIRED' };
@@ -39,21 +44,24 @@ export async function createPool(
     .single();
 
   if (error || !pool) {
+    console.error('createPool: pool insert error', error);
     return { pool: null, error: error?.message ?? 'Failed to create pool.' };
   }
 
   // Add admin as member
-  await supabase.from('pool_members').insert({
+  const { error: memberErr } = await supabase.from('pool_members').insert({
     pool_id: pool.id,
     user_id: adminId,
     role: 'admin',
   });
+  if (memberErr) console.error('createPool: pool_members insert error', memberErr);
 
   // Consume this specific entitlement by binding it to the new pool
-  await supabase
+  const { error: entUpdateErr } = await supabase
     .from('entitlements')
     .update({ pool_id: pool.id, updated_at: new Date().toISOString() })
     .eq('id', ent.id);
+  if (entUpdateErr) console.error('createPool: entitlement update error', entUpdateErr);
 
   return { pool: pool as Pool, error: null };
 }

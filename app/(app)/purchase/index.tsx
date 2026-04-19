@@ -90,8 +90,12 @@ export default function PurchaseScreen() {
     );
     setCreating(false);
 
-    if (error && error !== 'PURCHASE_REQUIRED') {
-      setCreateError(error);
+    if (error) {
+      setCreateError(
+        error === 'PURCHASE_REQUIRED'
+          ? 'No se encontró una compra disponible. Intenta comprar nuevamente.'
+          : error,
+      );
       return;
     }
 
