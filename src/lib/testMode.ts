@@ -106,63 +106,17 @@ export async function seedFakeUsers(
     return { inserted: 0, error: 'count must be between 1 and 50.' };
   }
 
-  const { data: pool } = await supabase
-    .from('pools')
-    .select('max_members')
-    .eq('id', poolId)
-    .maybeSingle();
+  // Use SECURITY DEFINER RPC — client cannot insert into auth.users directly
+  const { data, error } = await supabase.rpc('test_seed_fake_users', {
+    p_pool_id: poolId,
+    p_count: count,
+  });
 
-  if (!pool) {
-    return { inserted: 0, error: 'Pool not found.' };
-  }
+  if (error) return { inserted: 0, error: error.message };
 
-  const { count: currentCount } = await supabase
-    .from('pool_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('pool_id', poolId);
-
-  const available = pool.max_members - (currentCount ?? 0);
-  const toInsert = Math.min(count, available);
-
-  if (toInsert <= 0) {
-    return { inserted: 0, error: 'Pool is full — no slots available for fake users.' };
-  }
-
-  // Build deterministic UUIDs from pool suffix + index.
-  // Format: 00000000-0000-{i:04x}-0000-{last-12-chars-of-pool-id}
-  // This is not a valid RFC-4122 UUID version but works as a DB UUID value.
-  const poolSuffix = poolId.replace(/-/g, '').slice(20); // last 12 hex chars
-  const profiles: Array<{ id: string; username: string; full_name: string }> = [];
-  const members: Array<{ pool_id: string; user_id: string; role: 'member' }> = [];
-
-  for (let i = 1; i <= toInsert; i++) {
-    const fakeId = `00000000-0000-${i.toString(16).padStart(4, '0')}-0000-${poolSuffix}`;
-    profiles.push({
-      id: fakeId,
-      username: `test_user_${i}`,
-      full_name: `Test User ${i}`,
-    });
-    members.push({ pool_id: poolId, user_id: fakeId, role: 'member' });
-  }
-
-  // Profiles first (foreign key dependency)
-  const { error: profileErr } = await supabase
-    .from('profiles')
-    .upsert(profiles, { onConflict: 'id', ignoreDuplicates: true });
-
-  if (profileErr) {
-    return { inserted: 0, error: `Profile upsert failed: ${profileErr.message}` };
-  }
-
-  const { error: memberErr } = await supabase
-    .from('pool_members')
-    .upsert(members, { onConflict: 'pool_id,user_id', ignoreDuplicates: true });
-
-  if (memberErr) {
-    return { inserted: 0, error: `Member upsert failed: ${memberErr.message}` };
-  }
-
-  return { inserted: toInsert, error: null };
+  const result = data as { success: boolean; inserted?: number; error?: string } | null;
+  if (!result?.success) return { inserted: 0, error: result?.error ?? 'Failed to seed users.' };
+  return { inserted: result.inserted ?? 0, error: null };
 }
 
 // ─────────────────────────────────────────────
