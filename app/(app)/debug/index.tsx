@@ -147,7 +147,9 @@ function DebugContent() {
       {/* ── Pool activo ── */}
       <Section title="Pool activo">
         <Text style={styles.meta}>
-          {currentPool ? `"${currentPool.name}" (${currentPool.max_members} slots)` : 'Ninguno seleccionado'}
+          {currentPool
+            ? `"${currentPool.name}" (${currentPool.max_members} slots)\nID: ${currentPool.id}`
+            : 'Ninguno seleccionado'}
         </Text>
         <Row>
           <TextInput
