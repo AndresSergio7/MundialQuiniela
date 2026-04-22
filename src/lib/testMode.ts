@@ -209,81 +209,22 @@ export async function cleanTestPool(poolId: string): Promise<{ error: string | n
 // Bypasses the deadline check and validation rules — test use only.
 export async function seedFakePredictionsAndSubmit(
   poolId: string,
+  count: number = 2,
 ): Promise<{ users: number; error: string | null }> {
   assertTestMode('seedFakePredictionsAndSubmit');
 
-  const { data: fakeMembers } = await supabase
-    .from('pool_members')
-    .select('user_id')
-    .eq('pool_id', poolId)
-    .like('user_id', '00000000-0000-%');
+  // Single RPC: creates auth users + profiles + pool_members +
+  // predictions + submissions in one SECURITY DEFINER transaction.
+  const { data, error } = await supabase.rpc('test_seed_and_submit', {
+    p_pool_id: poolId,
+    p_count: count,
+  });
 
-  if (!fakeMembers?.length) {
-    return { users: 0, error: 'No fake users found. Run seedFakeUsers first.' };
-  }
+  if (error) return { users: 0, error: error.message };
 
-  const { data: matches } = await supabase
-    .from('matches')
-    .select('id')
-    .order('match_number', { ascending: true });
-
-  if (!matches?.length) {
-    return { users: 0, error: 'No matches found in DB.' };
-  }
-
-  for (const member of fakeMembers) {
-    const userId = member.user_id;
-
-    // Generate varied predictions so scoreline rules would pass even in prod mode
-    const predictions = matches.map((m, idx) => ({
-      pool_id: poolId,
-      user_id: userId,
-      match_id: m.id,
-      home_score: [1, 2, 0, 2, 1, 3, 0, 1, 2, 1][idx % 10],
-      away_score: [0, 1, 0, 2, 1, 1, 1, 2, 0, 3][idx % 10],
-      is_locked: false,
-    }));
-
-    const { error: predErr } = await supabase
-      .from('predictions')
-      .upsert(predictions, { onConflict: 'pool_id,user_id,match_id' });
-
-    if (predErr) {
-      return { users: 0, error: `Predictions failed for ${userId}: ${predErr.message}` };
-    }
-
-    const { error: subErr } = await supabase
-      .from('submissions')
-      .upsert(
-        {
-          pool_id: poolId,
-          user_id: userId,
-          submitted_at: new Date().toISOString(),
-          is_valid: true,
-          validation_errors: [],
-        },
-        { onConflict: 'pool_id,user_id' }
-      );
-
-    if (subErr) {
-      return { users: 0, error: `Submission failed for ${userId}: ${subErr.message}` };
-    }
-
-    await supabase.from('standings').upsert(
-      {
-        pool_id: poolId,
-        user_id: userId,
-        total_points: 0,
-        exact_scores: 0,
-        correct_results: 0,
-        matches_played: 0,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'pool_id,user_id' }
-    );
-  }
-
-  return { users: fakeMembers.length, error: null };
+  const result = data as { success: boolean; inserted?: number; error?: string } | null;
+  if (!result?.success) return { users: 0, error: result?.error ?? 'Failed to seed.' };
+  return { users: result.inserted ?? 0, error: null };
 }
 
 // ─────────────────────────────────────────────
