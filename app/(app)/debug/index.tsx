@@ -19,8 +19,8 @@ import {
   calculatePoints,
   cleanTestPool,
 } from '@/lib/testMode';
-import { fetchAllMatches } from '@/services/matches';
-import { getStandingsWithAllMembers } from '@/services/standings';
+import { fetchAllMatches } from '@/services/matches.service';
+import { getStandingsWithAllMembers } from '@/services/standings.service';
 import { colors, spacing, typography, radius } from '@/components/ui/theme';
 import type { Match, Standing } from '@/types';
 
@@ -113,7 +113,9 @@ function DebugContent() {
 
   async function handleSeedPredictions() {
     if (!currentPool) { addLog(false, 'Selecciona un pool primero'); return; }
-    await run('seedFakePredictionsAndSubmit', () => seedFakePredictionsAndSubmit(currentPool.id));
+    await run('seedFakePredictionsAndSubmit', () =>
+      seedFakePredictionsAndSubmit(currentPool.id, parseInt(userCount) || 2),
+    );
   }
 
   async function handleSetResult() {
