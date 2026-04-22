@@ -66,9 +66,21 @@ function DebugContent() {
   // Standings
   const [standings, setStandings] = useState<Standing[]>([]);
 
+  // Finished matches (for results panel)
+  const [finishedMatches, setFinishedMatches] = useState<Match[]>([]);
+
   useEffect(() => {
-    fetchAllMatches().then((all) => setMatches(all.slice(0, 8)));
+    fetchAllMatches().then((all) => {
+      setMatches(all.slice(0, 8));
+      setFinishedMatches(all.filter((m) => m.status === 'finished'));
+    });
   }, []);
+
+  function refreshFinishedMatches() {
+    fetchAllMatches().then((all) =>
+      setFinishedMatches(all.filter((m) => m.status === 'finished')),
+    );
+  }
 
   function addLog(ok: boolean, msg: string) {
     setLog((prev) => [{ ok, msg }, ...prev].slice(0, 20));
@@ -122,6 +134,7 @@ function DebugContent() {
     if (!selectedMatch) { addLog(false, 'Selecciona un partido'); return; }
     await run('setMatchResult', async () => {
       const r = await setMatchResult(selectedMatch.id, parseInt(homeScore) || 0, parseInt(awayScore) || 0);
+      if (!r.error) refreshFinishedMatches();
       return { error: r.error, match: r.match ? `${r.match.home_team} ${homeScore}-${awayScore} ${r.match.away_team}` : null };
     });
   }
@@ -226,6 +239,22 @@ function DebugContent() {
           <Btn label="Set Result" onPress={handleSetResult} busy={busy} color="#7c3aed" />
         </Row>
       </Section>
+
+      {/* ── Resultados aplicados ── */}
+      {finishedMatches.length > 0 && (
+        <Section title={`Resultados aplicados (${finishedMatches.length})`}>
+          {finishedMatches.map((m) => (
+            <View key={m.id} style={styles.resultRow}>
+              <Text style={styles.resultTeams} numberOfLines={1}>
+                {m.home_team_code} vs {m.away_team_code}
+              </Text>
+              <Text style={styles.resultScore}>
+                {m.home_score} — {m.away_score}
+              </Text>
+            </View>
+          ))}
+        </Section>
+      )}
 
       {/* ── Calcular puntos ── */}
       <Section title="Calcular puntos">
@@ -359,4 +388,14 @@ const styles = StyleSheet.create({
   standingPts: { ...typography.label, color: colors.primary, fontWeight: '700', width: 52, textAlign: 'right' },
   standingMeta: { ...typography.caption, color: colors.textMuted, width: 64, textAlign: 'right' },
   logEntry: { ...typography.caption, lineHeight: 20, fontFamily: 'monospace' },
+  resultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  resultTeams: { ...typography.caption, color: colors.text, flex: 1 },
+  resultScore: { ...typography.label, color: colors.primary, fontWeight: '700', marginLeft: spacing.sm },
 });
