@@ -19,7 +19,7 @@
 // ============================================================
 
 import { supabase } from '@/lib/supabase';
-import { recalculateStandings } from '@/lib/api';
+import { recalculateStandings } from '@/services/results.service';
 import type { Pool, Match } from '@/types';
 
 // ─────────────────────────────────────────────
@@ -184,20 +184,18 @@ export async function setMatchResult(
     return { match: null, error: 'Scores must be whole numbers between 0 and 20.' };
   }
 
-  const { data, error } = await supabase
-    .from('matches')
-    .update({
-      home_score: homeScore,
-      away_score: awayScore,
-      status: 'finished',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', matchId)
-    .select()
-    .single();
+  // Use SECURITY DEFINER RPC to bypass matches RLS (no UPDATE policy on client)
+  const { data, error } = await supabase.rpc('test_set_match_result', {
+    p_match_id: matchId,
+    p_home_score: homeScore,
+    p_away_score: awayScore,
+  });
 
   if (error) return { match: null, error: error.message };
-  return { match: data as Match, error: null };
+
+  const result = data as { success: boolean; error?: string; match?: Match } | null;
+  if (!result?.success) return { match: null, error: result?.error ?? 'Failed to set result.' };
+  return { match: result.match ?? null, error: null };
 }
 
 // ─────────────────────────────────────────────
