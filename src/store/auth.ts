@@ -1,19 +1,14 @@
 import { create } from 'zustand';
-import { supabase } from '@/lib/supabase';
-import type { AuthState, AuthUser, Profile, Entitlement } from '@/types';
+import type { Session, User } from '@supabase/supabase-js';
+
+interface AuthState {
+  session: Session | null;
+  user: User | null;
+  setSession: (session: Session | null) => void;
+}
 
 export const useAuthStore = create<AuthState>((set) => ({
+  session: null,
   user: null,
-  profile: null,
-  entitlement: null,
-  isLoading: true,
-
-  setUser: (user: AuthUser | null) => set({ user }),
-  setProfile: (profile: Profile | null) => set({ profile }),
-  setEntitlement: (entitlement: Entitlement | null) => set({ entitlement }),
-
-  signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, profile: null, entitlement: null });
-  },
+  setSession: (session) => set({ session, user: session?.user ?? null }),
 }));

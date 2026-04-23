@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { AppError } from '@/lib/errors';
+import { signUp } from '@/services/auth.service';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
@@ -42,27 +43,23 @@ export default function RegisterScreen() {
     if (!validate()) return;
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: { username: username.trim(), full_name: fullName.trim() },
-      },
-    });
+    try {
+      const session = await signUp(email.trim(), password, {
+        username: username.trim(),
+        fullName: fullName.trim(),
+      });
 
-    if (error) {
-      setErrorMsg(error.message);
+      if (session) {
+        // Auth listener en root layout se encarga de redirigir.
+        return;
+      }
+
+      setSuccessMsg('Revisa tu email para confirmar tu cuenta y luego inicia sesión.');
+    } catch (error) {
+      setErrorMsg(error instanceof AppError ? error.message : 'Error al crear la cuenta. Intenta de nuevo.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (data.session) {
-      router.replace('/(app)');
-      return;
-    }
-
-    setSuccessMsg('Revisa tu email para confirmar tu cuenta y luego inicia sesión.');
-    setLoading(false);
   }
 
   return (

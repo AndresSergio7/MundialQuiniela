@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   StyleSheet,
   Share,
   TouchableOpacity,
@@ -10,20 +11,20 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
-import { usePool } from '@/hooks/usePool';
-import { generateInviteLink } from '@/services/invites';
-import { removeMember } from '@/services/pools';
+import { generateInviteLink } from '@/services/invites.service';
+import { getPoolMembers, removeMember } from '@/services/pools.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import type { PoolMember, Pool } from '@/types';
 
 export default function InvitesScreen() {
+  const router = useRouter();
   const { user } = useAuthStore();
-  const { currentPool } = usePoolStore();
-  const { fetchMembers } = usePool();
+  const { currentPool, pools, setCurrentPool } = usePoolStore();
 
   const [members, setMembers] = useState<PoolMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,9 +42,17 @@ export default function InvitesScreen() {
     if (!activePool) return;
     setLoading(true);
     setError(null);
-    const m = await fetchMembers(activePool.id);
+    const m = await getPoolMembers(activePool.id);
     setMembers(m);
     setLoading(false);
+  }
+
+  function handlePoolSelect(pool: Pool) {
+    setCurrentPool(pool);
+    setError(null);
+    setRemoveError(null);
+    setShareSuccess(false);
+    loadData(pool);
   }
 
   useEffect(() => {
@@ -61,6 +70,11 @@ export default function InvitesScreen() {
     setSharing(false);
 
     if (linkError || !link) {
+      if (linkError === 'PURCHASE_REQUIRED') {
+        setError('Para invitar participantes primero necesitas comprar un plan.');
+        router.push('/(app)/purchase');
+        return;
+      }
       setError(linkError ?? 'No se pudo generar el link de invitación.');
       return;
     }
@@ -130,16 +144,54 @@ export default function InvitesScreen() {
   }
 
   const spotsLeft = currentPool.max_members - members.length;
+  const invitesEnabled = currentPool.max_members > 1;
 
   return (
     <View style={styles.screen}>
       <PoolSelectorBar onPoolChange={(pool) => loadData(pool)} />
+
+      {pools.length > 1 && (
+        <View style={styles.switcherWrap}>
+          <Text style={styles.switcherLabel}>Invitar en:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.switcherList}
+          >
+            {pools.map((pool) => {
+              const isActive = pool.id === currentPool.id;
+              return (
+                <TouchableOpacity
+                  key={pool.id}
+                  style={[styles.poolChip, isActive && styles.poolChipActive]}
+                  onPress={() => handlePoolSelect(pool)}
+                >
+                  <Text style={[styles.poolChipText, isActive && styles.poolChipTextActive]}>
+                    {pool.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Invite hero card — admin only */}
       {isAdmin && (
         <View style={styles.inviteHero}>
           <View style={styles.inviteHeroLeft}>
             <Text style={styles.inviteHeroTitle}>Invitar Participantes</Text>
+            <Text style={styles.inviteHeroSub}>
+              Quiniela activa: {currentPool.name}
+            </Text>
+            <Text style={styles.inviteHeroSub}>
+              {invitesEnabled
+                ? 'Invitaciones habilitadas'
+                : 'Primero compra un plan para habilitar invitaciones'}
+            </Text>
+            <Text style={styles.inviteHeroSub}>
+              Capacidad máxima: {currentPool.max_members} participante{currentPool.max_members !== 1 ? 's' : ''}
+            </Text>
             <Text style={styles.inviteHeroSub}>
               {spotsLeft > 0
                 ? `${spotsLeft} lugar${spotsLeft !== 1 ? 'es' : ''} disponible${spotsLeft !== 1 ? 's' : ''} de ${currentPool.max_members}`
@@ -323,6 +375,30 @@ const styles = StyleSheet.create({
   },
   inviteHeroTitle: { ...typography.h3, color: '#fff', marginBottom: 2 },
   inviteHeroSub: { ...typography.caption, color: 'rgba(255,255,255,0.6)' },
+  switcherWrap: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  switcherLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  switcherList: { gap: spacing.xs, paddingBottom: spacing.xs },
+  poolChip: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  poolChipActive: {
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
+  },
+  poolChipText: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
+  poolChipTextActive: { color: '#fff' },
 
   errorBanner: {
     flexDirection: 'row',

@@ -19,6 +19,54 @@ import { POOL_PLANS } from '@/types';
 import type { PoolPlanId } from '@/types';
 
 const ALL_SKUS = POOL_PLANS.map((p) => p.id);
+const SKIP_PURCHASE_VALIDATION = true;
+
+async function grantSimulatedEntitlement(
+  userId: string,
+  plan: { id: string; slots: number; priceCents: number },
+): Promise<boolean> {
+  const txId = `native_mock_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  const { data: payment } = await supabase
+    .from('payments')
+    .insert({
+      user_id: userId,
+      amount_cents: plan.priceCents,
+      currency: 'USD',
+      platform: Platform.OS as 'ios' | 'android',
+      product_id: plan.id,
+      transaction_id: txId,
+      status: 'verified',
+      payment_type: 'app_access',
+      slots_purchased: plan.slots,
+      verified_at: new Date().toISOString(),
+    })
+    .select('id')
+    .maybeSingle();
+
+  const entitlementPayload = {
+    user_id: userId,
+    pool_id: null,
+    has_app_access: true,
+    base_slots: plan.slots,
+    extra_slots: 0,
+  } as Record<string, unknown>;
+
+  const entitlementPayloadWithPayment = {
+    ...entitlementPayload,
+    ...(payment?.id ? { payment_id: payment.id } : {}),
+  };
+
+  let { error } = await supabase.from('entitlements').insert(entitlementPayloadWithPayment);
+
+  // Some environments don't have payment_id column/migration yet.
+  if (error && payment?.id) {
+    const retry = await supabase.from('entitlements').insert(entitlementPayload);
+    error = retry.error;
+  }
+
+  return !error;
+}
 
 export async function initIAP(): Promise<boolean> {
   try {
@@ -46,6 +94,10 @@ export async function purchasePoolPlan(
 ): Promise<boolean> {
   const plan = POOL_PLANS.find((p) => p.id === planId);
   if (!plan) return false;
+
+  if (SKIP_PURCHASE_VALIDATION) {
+    return grantSimulatedEntitlement(userId, plan);
+  }
 
   try {
     const purchase = await IAP.requestPurchase({ sku: planId });

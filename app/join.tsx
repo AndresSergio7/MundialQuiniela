@@ -8,9 +8,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
+import { usePoolStore } from '@/store/pool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
-import { joinViaInvite } from '@/services/invites';
-import { usePool } from '@/hooks/usePool';
+import { joinViaInvite } from '@/services/invites.service';
+import { listMyPools } from '@/services/pools.service';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 
@@ -22,8 +23,8 @@ export default function JoinScreen() {
   const token = params.token;
   const router = useRouter();
   const { user } = useAuthStore();
+  const { setPools } = usePoolStore();
   const { setPendingInvite } = usePendingInviteStore();
-  const { fetchPools } = usePool();
 
   const [status, setStatus] = useState<JoinStatus>('loading');
   const [message, setMessage] = useState('');
@@ -49,7 +50,8 @@ export default function JoinScreen() {
     const { success, error } = await joinViaInvite(userId, pid, tk);
 
     if (success) {
-      await fetchPools();
+      const pools = await listMyPools(userId);
+      setPools(pools);
       setStatus('success');
       setTimeout(() => router.replace('/(app)'), 1400);
     } else {

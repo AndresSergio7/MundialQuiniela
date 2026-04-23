@@ -23,7 +23,7 @@ export function Input({ label, error, style, ...props }: InputProps) {
         style={[
           styles.input,
           focused && styles.inputFocused,
-          error && styles.inputError,
+          Boolean(error) && styles.inputError,
           style,
         ]}
         placeholderTextColor={colors.textLight}

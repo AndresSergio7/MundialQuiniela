@@ -12,21 +12,25 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
-import { usePool } from '@/hooks/usePool';
+import { supabase } from '@/lib/supabase';
+import { usePoolStore } from '@/store/pool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
-import { deletePool, leavePool } from '@/services/pools';
-import { joinViaInvite } from '@/services/invites';
-import { getSubmissionsForPools } from '@/services/predictions';
+import { deletePoolByUser, leavePool, listMyPools } from '@/services/pools.service';
+import { joinViaInvite } from '@/services/invites.service';
+import { getSubmissionsForPools } from '@/services/predictions.service';
 import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
-import type { Pool, Submission } from '@/types';
+import type { Entitlement, Pool, Profile, Submission } from '@/types';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, profile, entitlement } = useAuthStore();
-  const { pools, loading, fetchPools, setCurrentPool } = usePool();
+  const { user } = useAuthStore();
+  const { currentPool, pools, setPools, setCurrentPool } = usePoolStore();
+  const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const { poolId: pendingPoolId, token: pendingToken, clearPendingInvite } =
     usePendingInviteStore();
 
@@ -35,6 +39,14 @@ export default function HomeScreen() {
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const fetchPools = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const nextPools = await listMyPools(user.id);
+    setPools(nextPools);
+    setLoading(false);
+  }, [user, setPools]);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,6 +75,37 @@ export default function HomeScreen() {
     getTournamentConfig().then(cfg => setKickoffDate(cfg.firstMatchKickoff));
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      setEntitlement(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
+      supabase
+        .from('entitlements')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('pool_id', null)
+        .eq('has_app_access', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ]).then(([profileRes, entitlementRes]) => {
+      if (cancelled) return;
+      setProfile((profileRes.data as Profile | null) ?? null);
+      setEntitlement((entitlementRes.data as Entitlement | null) ?? null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   function openCreateModal() {
     router.push('/(app)/purchase');
   }
@@ -81,12 +124,20 @@ export default function HomeScreen() {
     if (!confirmPool || !user) return;
     setDeleting(true);
     setDeleteError(null);
+    const deletingPoolId = confirmPool.id;
     const isAdmin = confirmPool.admin_id === user.id;
     const { error } = isAdmin
-      ? await deletePool(user.id, confirmPool.id)
-      : await leavePool(user.id, confirmPool.id);
+      ? await deletePoolByUser(user.id, deletingPoolId)
+      : await leavePool(user.id, deletingPoolId);
     setDeleting(false);
     if (error) { setDeleteError(error); return; }
+    const remainingPools = pools.filter((pool) => pool.id !== deletingPoolId);
+    setPools(remainingPools);
+    if (remainingPools.length === 0) {
+      setCurrentPool(null);
+    } else if (currentPool?.id === deletingPoolId) {
+      setCurrentPool(remainingPools[0]);
+    }
     setConfirmPool(null);
     await fetchPools();
   }
@@ -172,6 +223,7 @@ export default function HomeScreen() {
         ) : (
           pools.map((pool) => {
             const sub = submissions[pool.id];
+            const isPoolAdmin = pool.admin_id === user?.id;
             const isFinal = sub?.is_final === true;
             const badgeLabel = isFinal ? 'Enviada' : sub?.is_valid ? 'Lista' : sub ? 'Incompleta' : 'Pendiente';
             const badgeStyle = isFinal
@@ -195,7 +247,7 @@ export default function HomeScreen() {
                       <View style={styles.poolInfo}>
                         <Text style={styles.poolName}>{pool.name}</Text>
                         <Text style={styles.poolMeta}>
-                          {pool.admin_id === user?.id ? '👑 Admin' : '👤 Miembro'} · {pool.max_members} participantes
+                          {isPoolAdmin ? '👑 Admin' : '👤 Miembro'} · {pool.max_members} participantes
                         </Text>
                       </View>
                       <View style={styles.poolActions}>
@@ -207,7 +259,11 @@ export default function HomeScreen() {
                           style={styles.trashBtn}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
-                          <Ionicons name="trash-outline" size={17} color={colors.error} />
+                          <Ionicons
+                            name={isPoolAdmin ? 'trash-outline' : 'exit-outline'}
+                            size={17}
+                            color={isPoolAdmin ? colors.error : colors.textMuted}
+                          />
                         </TouchableOpacity>
                       </View>
                     </View>

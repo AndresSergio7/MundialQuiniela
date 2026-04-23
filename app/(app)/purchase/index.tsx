@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { supabase } from '@/lib/supabase';
 import { purchasePoolPlan, restorePurchases } from '@/lib/payments';
-import { createPool } from '@/services/pools';
+import { createPoolLegacy as createPool } from '@/services/pools.service';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -28,7 +28,7 @@ const POPULAR_PLAN_IDX = 1;
 
 export default function PurchaseScreen() {
   const router = useRouter();
-  const { user, setEntitlement } = useAuthStore();
+  const { user } = useAuthStore();
 
   const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -45,8 +45,8 @@ export default function PurchaseScreen() {
     refreshUnused();
   }, []);
 
-  async function refreshUnused() {
-    if (!user) return;
+  async function refreshUnused(): Promise<Entitlement[]> {
+    if (!user) return [];
     const { data } = await supabase
       .from('entitlements')
       .select('*')
@@ -56,7 +56,7 @@ export default function PurchaseScreen() {
       .order('created_at', { ascending: true });
     const list = (data ?? []) as Entitlement[];
     setUnusedEntitlements(list);
-    if (list.length > 0) setEntitlement(list[0]);
+    return list;
   }
 
   async function handlePurchase(planId: PoolPlanId) {
@@ -68,10 +68,10 @@ export default function PurchaseScreen() {
     setPurchasing(null);
 
     if (success) {
-      await refreshUnused();
+      const list = await refreshUnused();
       setPoolName('');
       setCreateError('');
-      setSelectedEntitlementId(null);
+      setSelectedEntitlementId(list[0]?.id ?? null);
       setShowNameModal(true);
     } else {
       setPurchaseError('La compra falló. Por favor intenta de nuevo.');
@@ -108,6 +108,13 @@ export default function PurchaseScreen() {
     setPoolName('');
     setCreateError('');
     setSelectedEntitlementId(ent.id);
+    setShowNameModal(true);
+  }
+
+  function openNameModalWithoutPurchase() {
+    setPoolName('');
+    setCreateError('');
+    setSelectedEntitlementId(null);
     setShowNameModal(true);
   }
 
@@ -193,6 +200,21 @@ export default function PurchaseScreen() {
               {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
             </Text>
           </View>
+
+          {unusedEntitlements.length === 0 && (
+            <View style={styles.freeCreateCard}>
+              <Text style={styles.freeCreateTitle}>¿Primero quieres crear tu quiniela?</Text>
+              <Text style={styles.freeCreateSub}>
+                Puedes crearla gratis ahora mismo. Solo pagarás cuando quieras invitar participantes.
+              </Text>
+              <Button
+                title="Crear quiniela gratis"
+                variant="outline"
+                onPress={openNameModalWithoutPurchase}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
+          )}
 
           {POOL_PLANS.map((plan, idx) => {
             const isBuying = purchasing === plan.id;
@@ -293,7 +315,7 @@ export default function PurchaseScreen() {
             <Text style={styles.modalSubtitle}>
               {selectedEntitlementId
                 ? `Capacidad: ${unusedEntitlements.find(e => e.id === selectedEntitlementId)?.base_slots ?? '?'} participantes`
-                : 'Elige un nombre que identifique a tu grupo.'}
+                : 'Se creará con 1 participante. Al invitar, te pediremos elegir un plan.'}
             </Text>
 
             <Input
@@ -408,6 +430,16 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   sectionLabel: { ...typography.label, color: colors.textMuted },
+  freeCreateCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  freeCreateTitle: { ...typography.label, color: colors.text },
+  freeCreateSub: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
 
   entitlementCard: {
     flexDirection: 'row',

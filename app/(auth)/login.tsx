@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { AppError } from '@/lib/errors';
+import { signIn } from '@/services/auth.service';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
@@ -36,21 +37,12 @@ export default function LoginScreen() {
     if (!validate()) return;
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (data.session) {
-      router.replace('/(app)');
-    } else {
-      setErrorMsg('Error al iniciar sesión. Intenta de nuevo.');
+    try {
+      await signIn(email.trim(), password);
+      // Auth listener en root layout se encarga de redirigir.
+    } catch (error) {
+      setErrorMsg(error instanceof AppError ? error.message : 'Error al iniciar sesión. Intenta de nuevo.');
+    } finally {
       setLoading(false);
     }
   }

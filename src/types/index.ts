@@ -2,12 +2,7 @@
 // MUNDIAL QUINIELA - TypeScript Types
 // ============================================================
 
-// ---- Auth ----
-export interface AuthUser {
-  id: string;
-  email: string;
-  created_at: string;
-}
+import type { Session, User } from '@supabase/supabase-js';
 
 // ---- Profile ----
 export interface Profile {
@@ -255,14 +250,9 @@ export interface ExternalMatchResult {
 
 // ---- Store ----
 export interface AuthState {
-  user: AuthUser | null;
-  profile: Profile | null;
-  entitlement: Entitlement | null;
-  isLoading: boolean;
-  setUser: (user: AuthUser | null) => void;
-  setProfile: (profile: Profile | null) => void;
-  setEntitlement: (entitlement: Entitlement | null) => void;
-  signOut: () => void;
+  session: Session | null;
+  user: User | null;
+  setSession: (session: Session | null) => void;
 }
 
 export interface PoolState {

@@ -1,11 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { parseInviteLink, joinViaInvite } from '@/services/invites';
+import { useAuthStore } from '@/store/auth';
+import { parseInviteLink, joinViaInvite } from '@/services/invites.service';
 import { usePendingInviteStore } from '@/store/pendingInvite';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 1000 * 30,
+    },
+  },
+});
 
 // SplashScreen only works on native — guard for web
 if (Platform.OS !== 'web') {
@@ -13,30 +26,54 @@ if (Platform.OS !== 'web') {
 }
 
 export default function RootLayout() {
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
+  const setSession = useAuthStore((state) => state.setSession);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      setSession(session);
+      setIsAuthReady(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setSession(session);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [setSession]);
 
   // Handle deep links — native only
   useEffect(() => {
     if (Platform.OS === 'web') return;
     let sub: { remove: () => void } | null = null;
 
-    import('expo-linking').then((Linking) => {
-      const handle = async (url: string) => {
-        const parsed = parseInviteLink(url);
-        if (!parsed) return;
-        if (user) {
-          await joinViaInvite(user.id, parsed.poolId, parsed.token);
-          router.replace('/(app)');
-        } else {
-          // Store for after login
-          usePendingInviteStore.getState().setPendingInvite(parsed.poolId, parsed.token);
-          router.replace('/join' as any);
-        }
-      };
-      sub = Linking.addEventListener('url', ({ url }) => handle(url));
-      Linking.getInitialURL().then((url) => { if (url) handle(url); });
+    const handle = async (url: string) => {
+      const parsed = parseInviteLink(url);
+      if (!parsed) return;
+      if (user) {
+        await joinViaInvite(user.id, parsed.poolId, parsed.token);
+        router.replace('/(app)');
+      } else {
+        usePendingInviteStore.getState().setPendingInvite(parsed.poolId, parsed.token);
+        router.replace('/join' as any);
+      }
+    };
+
+    sub = Linking.addEventListener('url', ({ url }) => handle(url));
+    Linking.getInitialURL().then((url) => {
+      if (url) handle(url);
     });
 
     return () => sub?.remove();
@@ -63,7 +100,7 @@ export default function RootLayout() {
 
   // Route guard
   useEffect(() => {
-    if (isLoading) return;
+    if (!isAuthReady) return;
     const inAuth = segments[0] === '(auth)';
     const inJoin = segments[0] === 'join';
     if (!user && !inAuth && !inJoin) {
@@ -71,25 +108,27 @@ export default function RootLayout() {
     } else if (user && inAuth) {
       router.replace('/(app)');
     }
-  }, [user, segments, isLoading]);
+  }, [user, segments, isAuthReady, router]);
 
   // Hide splash (native only)
   useEffect(() => {
-    if (Platform.OS !== 'web' && !isLoading) {
+    if (Platform.OS !== 'web' && isAuthReady) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [isLoading]);
+  }, [isAuthReady]);
 
-  if (isLoading) return null;
+  if (!isAuthReady) return null;
 
   return (
-    <>
-      <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(app)" />
-        <Stack.Screen name="join" />
-      </Stack>
-    </>
+    <QueryClientProvider client={queryClient}>
+      <>
+        <StatusBar style="auto" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(app)" />
+          <Stack.Screen name="join" />
+        </Stack>
+      </>
+    </QueryClientProvider>
   );
 }

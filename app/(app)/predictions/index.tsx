@@ -12,13 +12,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
-import { fetchAllMatches } from '@/services/matches';
+import { fetchAllMatches } from '@/services/matches.service';
 import {
   fetchUserPredictions,
   savePredictionsBulk,
-  submitQuiniela,
+  submitQuinielaResult as submitQuiniela,
   getSubmissionStatus,
-} from '@/services/predictions';
+} from '@/services/predictions.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { MatchRow } from '@/components/MatchRow';
 import { Button } from '@/components/ui/Button';

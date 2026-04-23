@@ -1,7 +1,7 @@
 import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '@/store/auth';
+import { useAuth } from '@/hooks/useAuth';
 import { colors, shadows } from '@/components/ui/theme';
 import { TEST_MODE } from '@/lib/testMode';
 
@@ -11,7 +11,7 @@ const TAB_INACT = 'rgba(255,255,255,0.40)';
 const HDR_BG   = colors.primaryDark;
 
 export default function AppLayout() {
-  const { signOut } = useAuthStore();
+  const { signOut } = useAuth();
 
   return (
     <Tabs

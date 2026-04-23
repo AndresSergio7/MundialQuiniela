@@ -57,7 +57,6 @@ export const colors = {
 
   // ---- Legacy aliases (keep old keys working) ----
   secondary:     '#C0392B',
-  textMuted:     '#556B82',
 } as const;
 
 export const spacing = {
