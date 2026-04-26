@@ -30,26 +30,34 @@ export function PoolSelectorBar({ onPoolChange }: PoolSelectorBarProps) {
 
   return (
     <>
-      <TouchableOpacity
-        style={styles.bar}
-        onPress={() => canSwitch && setModalVisible(true)}
-        activeOpacity={canSwitch ? 0.78 : 1}
-      >
-        <View style={styles.left}>
-          <View style={styles.trophyDot}>
-            <Ionicons name="trophy" size={12} color={colors.accent} />
+      <View style={styles.container}>
+        <View style={styles.ball1} />
+        <View style={styles.ball2} />
+        <View style={styles.ball3} />
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => canSwitch && setModalVisible(true)}
+          activeOpacity={canSwitch ? 0.82 : 1}
+        >
+          <View style={styles.left}>
+            <View style={styles.trophyWrap}>
+              <Ionicons name="trophy" size={15} color={colors.primary} />
+            </View>
+            <View style={styles.poolInfo}>
+              <Text style={styles.poolLabel}>LIGA ACTIVA</Text>
+              <Text style={styles.poolName} numberOfLines={1}>
+                {currentPool?.name ?? 'Selecciona una quiniela'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.poolName} numberOfLines={1}>
-            {currentPool?.name ?? 'Selecciona una quiniela'}
-          </Text>
-        </View>
-        {canSwitch && (
-          <View style={styles.changeChip}>
-            <Text style={styles.changeText}>Cambiar</Text>
-            <Ionicons name="chevron-down" size={12} color={colors.accent} />
-          </View>
-        )}
-      </TouchableOpacity>
+          {canSwitch && (
+            <View style={styles.changeChip}>
+              <Text style={styles.changeText}>Cambiar</Text>
+              <Ionicons name="chevron-down" size={12} color={colors.primary} />
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <TouchableOpacity
@@ -97,15 +105,55 @@ export function PoolSelectorBar({ onPoolChange }: PoolSelectorBarProps) {
 }
 
 const styles = StyleSheet.create({
-  bar: {
+  container: {
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.md,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  ball1: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    top: -60,
+    right: -30,
+  },
+  ball2: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    bottom: -40,
+    left: -10,
+  },
+  ball3: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.28)',
+    top: 10,
+    left: 40,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.primaryDark,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: spacing.sm + 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    elevation: 5,
   },
   left: {
     flexDirection: 'row',
@@ -113,36 +161,44 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
-  trophyDot: {
-    width: 24,
-    height: 24,
+  trophyWrap: {
+    width: 34,
+    height: 34,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.successLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  poolName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
+  poolInfo: {
     flex: 1,
+  },
+  poolLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 1.2,
+  },
+  poolName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
     letterSpacing: 0.1,
   },
   changeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(201,168,76,0.2)',
+    backgroundColor: colors.successLight,
     borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.4)',
+    borderColor: colors.primary + '30',
     paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: radius.full,
-    gap: 3,
+    gap: 4,
   },
   changeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.accent,
+    color: colors.primary,
     letterSpacing: 0.3,
   },
   overlay: {

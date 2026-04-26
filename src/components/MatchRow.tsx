@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Image, Platform } from 'react-native';
+import { SvgUri } from 'react-native-svg';
 import { colors, spacing, radius, typography, shadows } from './ui/theme';
+import { getCountryFlagSvgUrl, getCountryFlagFallback } from '@/lib/flags';
 import type { Match } from '@/types';
 
 interface MatchRowProps {
@@ -13,19 +15,23 @@ interface MatchRowProps {
   pointsEarned?: number;
 }
 
-const FLAG_MAP: Record<string, string> = {
-  MEX:'🇲🇽',CRC:'🇨🇷',ZAF:'🇿🇦',CAN:'🇨🇦',BIH:'🇧🇦',QAT:'🇶🇦',
-  SUI:'🇨🇭',BRA:'🇧🇷',MAR:'🇲🇦',HTI:'🇭🇹',SCO:'🏴',USA:'🇺🇸',
-  URU:'🇺🇾',ESP:'🇪🇸',POR:'🇵🇹',ARG:'🇦🇷',POL:'🇵🇱',FRA:'🇫🇷',
-  BEL:'🇧🇪',AUS:'🇦🇺',KOR:'🇰🇷',GER:'🇩🇪',JPN:'🇯🇵',NED:'🇳🇱',
-  SEN:'🇸🇳',ENG:'🏴',IRN:'🇮🇷',ECU:'🇪🇨',COL:'🇨🇴',ITA:'🇮🇹',
-  PER:'🇵🇪',CRO:'🇭🇷',CIV:'🇨🇮',DEN:'🇩🇰',SRB:'🇷🇸',CMR:'🇨🇲',
-  CHI:'🇨🇱',GHA:'🇬🇭',ALG:'🇩🇿',TUR:'🇹🇷',EGY:'🇪🇬',VEN:'🇻🇪',
-  PAR:'🇵🇾',RSA:'🇿🇦',NZL:'🇳🇿',UKR:'🇺🇦',COD:'🇨🇩',
-};
+function FlagIcon({ code, rightAligned = false }: { code: string; rightAligned?: boolean }) {
+  const uri = getCountryFlagSvgUrl(code);
+  const fallback = getCountryFlagFallback(code);
 
-function getFlag(code: string) {
-  return FLAG_MAP[code] ?? '🏳️';
+  if (!uri) return <Text style={styles.flagFallback}>{fallback}</Text>;
+
+  if (Platform.OS === 'web') {
+    return (
+      <Image
+        source={{ uri }}
+        style={[styles.flagImage, rightAligned && styles.flagImageRight]}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return <SvgUri width={22} height={16} uri={uri} />;
 }
 
 function formatMatchDate(dateString: string) {
@@ -67,7 +73,7 @@ export function MatchRow({
           <Text style={styles.teamName} numberOfLines={1}>
             {match.home_team}
           </Text>
-          <Text style={styles.flag}>{getFlag(match.home_team_code)}</Text>
+          <FlagIcon code={match.home_team_code} />
         </View>
 
         {/* Score inputs */}
@@ -101,7 +107,7 @@ export function MatchRow({
 
         {/* Away team */}
         <View style={styles.teamBlockRight}>
-          <Text style={styles.flag}>{getFlag(match.away_team_code)}</Text>
+          <FlagIcon code={match.away_team_code} rightAligned />
           <Text style={styles.teamNameRight} numberOfLines={1}>
             {match.away_team}
           </Text>
@@ -175,7 +181,21 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     flexShrink: 1,
   },
-  flag: { fontSize: 20 },
+  flagImage: {
+    width: 22,
+    height: 16,
+    borderRadius: 2,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    backgroundColor: '#fff',
+  },
+  flagImageRight: {
+    marginRight: 0,
+  },
+  flagFallback: {
+    fontSize: 18,
+    lineHeight: 20,
+  },
   centerBlock: {
     flexDirection: 'row',
     alignItems: 'center',

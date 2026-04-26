@@ -10,6 +10,10 @@ config.resolver.sourceExts = [
   'json', 'cjs', 'mjs',
 ];
 
+// Allow Metro to resolve ESM package exports (needed for Expo 54 / RN 0.81)
+config.resolver.unstable_enablePackageExports = true;
+config.resolver.unstable_conditionNames = ['require', 'default'];
+
 // Stub react-native-iap on web with an empty compatible module
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === 'react-native-iap') {

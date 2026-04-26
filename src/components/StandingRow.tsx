@@ -27,6 +27,8 @@ export function StandingRow({ standing, isCurrentUser }: StandingRowProps) {
       isCurrentUser && styles.currentUser,
       isTop3 && isCurrentUser && styles.topCurrentUser,
     ]}>
+      <View style={[styles.leftAccent, isTop3 && styles.leftAccentTop, isCurrentUser && styles.leftAccentCurrent]} />
+
       {/* Rank */}
       <View style={[styles.rankWrap, medal && { backgroundColor: medal.bg }]}>
         {isTop3 ? (
@@ -68,26 +70,41 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm + 3,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    marginBottom: spacing.xs + 2,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#D7E3F0',
     ...shadows.sm,
+    overflow: 'hidden',
+  },
+  leftAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: '#C8D6E7',
+  },
+  leftAccentTop: {
+    backgroundColor: colors.accent,
+  },
+  leftAccentCurrent: {
+    backgroundColor: colors.primary,
   },
   topRow: {
-    borderColor: colors.accent + '60',
-    backgroundColor: '#FFFDF5',
+    borderColor: colors.accent + '80',
+    backgroundColor: '#FFFCF2',
   },
   currentUser: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    backgroundColor: colors.successLight,
+    borderColor: colors.primary + '88',
+    borderWidth: 1.5,
+    backgroundColor: '#F1FAF5',
   },
   topCurrentUser: {
-    borderColor: colors.accent,
+    borderColor: colors.accent + 'AA',
     borderWidth: 2,
     backgroundColor: colors.accentLight,
   },
@@ -96,7 +113,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.full,
-    backgroundColor: colors.borderLight,
+    backgroundColor: '#EAF0F8',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
@@ -105,14 +122,14 @@ const styles = StyleSheet.create({
   rankNum: {
     fontSize: 14,
     fontWeight: '800',
-    color: colors.textMuted,
+    color: '#516987',
   },
 
   avatarWrap: {
     width: 34,
     height: 34,
     borderRadius: radius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.navyMid,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
@@ -128,13 +145,21 @@ const styles = StyleSheet.create({
   usernameHighlight: { color: colors.primary },
   subtitle: {
     fontSize: 11,
-    color: colors.textLight,
+    color: '#7E93AB',
     marginTop: 2,
   },
 
-  pointsWrap: { alignItems: 'flex-end' },
+  pointsWrap: {
+    alignItems: 'flex-end',
+    backgroundColor: '#F5F9FF',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: '#D8E5F4',
+  },
   points: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: colors.navy,
   },

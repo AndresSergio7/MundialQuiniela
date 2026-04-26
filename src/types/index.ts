@@ -157,6 +157,23 @@ export interface Entitlement {
   updated_at: string;
 }
 
+// ---- User Payment Methods (safe metadata only) ----
+export interface UserPaymentMethod {
+  id: string;
+  user_id: string;
+  provider: string;
+  provider_customer_id: string | null;
+  provider_payment_method_id: string | null;
+  card_brand: string;
+  card_last4: string;
+  exp_month: number;
+  exp_year: number;
+  holder_name: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---- Scoring ----
 export type ScorePoints = 0 | 1 | 3 | 4 | 6;
 

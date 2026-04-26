@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   SectionList,
+  ScrollView,
   ActivityIndicator,
   RefreshControl,
   Modal,
@@ -24,6 +25,7 @@ import { MatchRow } from '@/components/MatchRow';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
+import { exportPredictionsPdf } from '@/lib/predictionsPdf';
 import type { Match, Submission, PredictionMap, Pool } from '@/types';
 
 type LocalScores = Record<string, { home: string; away: string }>;
@@ -44,6 +46,8 @@ export default function PredictionsScreen() {
   const [savedOk, setSavedOk] = useState(false);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const isDeadlinePassed = currentPool
     ? new Date(currentPool.prediction_deadline) <= new Date()
@@ -97,6 +101,17 @@ export default function PredictionsScreen() {
   );
   const allFilled = matches.length > 0 && filledCount === matches.length;
 
+  const printableRows = useMemo(
+    () => matches
+      .filter(m => localScores[m.id]?.home !== '' && localScores[m.id]?.away !== '')
+      .map(m => ({
+        match: m,
+        homeScore: parseInt(localScores[m.id].home, 10),
+        awayScore: parseInt(localScores[m.id].away, 10),
+      })),
+    [matches, localScores],
+  );
+
   function buildPredictionMap(): PredictionMap {
     const map: PredictionMap = {};
     for (const [matchId, score] of Object.entries(localScores)) {
@@ -138,6 +153,33 @@ export default function PredictionsScreen() {
     }
   }
 
+  async function handleExportPdf() {
+    if (!currentPool) return;
+
+    if (printableRows.length === 0) {
+      setError('Llena al menos un partido para poder imprimir la quiniela.');
+      return;
+    }
+
+    const userLabel = user?.user_metadata?.username ?? user?.email ?? undefined;
+
+    setError(null);
+    setExportingPdf(true);
+
+    try {
+      await exportPredictionsPdf({
+        poolName: currentPool.name,
+        generatedAt: new Date(),
+        userLabel,
+        rows: printableRows,
+      });
+    } catch {
+      setError('No se pudo generar el PDF. Intenta de nuevo.');
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   const groupedMatches = useMemo(() => {
     const groups: Record<string, Match[]> = {};
     for (const m of matches) {
@@ -149,7 +191,70 @@ export default function PredictionsScreen() {
       .map(([title, data]) => ({ title, data }));
   }, [matches]);
 
+  useEffect(() => {
+    if (groupedMatches.length === 0) return;
+
+    setCollapsedGroups(prev => {
+      const next: Record<string, boolean> = { ...prev };
+      let changed = false;
+
+      for (const [idx, group] of groupedMatches.entries()) {
+        if (next[group.title] === undefined) {
+          next[group.title] = idx !== 0;
+          changed = true;
+        }
+      }
+
+      for (const key of Object.keys(next)) {
+        if (!groupedMatches.find(g => g.title === key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [groupedMatches]);
+
+  const groupStats = useMemo(
+    () => groupedMatches.map(group => {
+      const filled = group.data.filter(m => {
+        const s = localScores[m.id];
+        return s?.home !== '' && s?.away !== '';
+      }).length;
+
+      return {
+        title: group.title,
+        total: group.data.length,
+        filled,
+      };
+    }),
+    [groupedMatches, localScores],
+  );
+
+  function toggleGroup(title: string) {
+    setCollapsedGroups(prev => ({ ...prev, [title]: !prev[title] }));
+  }
+
+  function expandAllGroups() {
+    setCollapsedGroups(prev => {
+      const next = { ...prev };
+      for (const g of groupedMatches) next[g.title] = false;
+      return next;
+    });
+  }
+
+  function collapseAllGroups() {
+    setCollapsedGroups(prev => {
+      const next = { ...prev };
+      for (const g of groupedMatches) next[g.title] = true;
+      return next;
+    });
+  }
+
   const pct = matches.length > 0 ? Math.round((filledCount / matches.length) * 100) : 0;
+  const showEditActions = mode === 'edit' && !isDeadlinePassed;
+  const showModifyAction = mode === 'view' && !isFinal && !isDeadlinePassed;
 
   if (!currentPool) {
     return (
@@ -177,21 +282,41 @@ export default function PredictionsScreen() {
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={() => loadAll()} tintColor={colors.accent} />
           }
-          renderSectionHeader={({ section: { title } }) => (
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupLabel}>GRUPO {title}</Text>
-            </View>
+          renderSectionHeader={({ section }) => (
+            <TouchableOpacity
+              style={styles.groupHeader}
+              activeOpacity={0.9}
+              onPress={() => toggleGroup(section.title)}
+            >
+              <View style={styles.groupHeaderLeft}>
+                <Text style={styles.groupLabel}>GRUPO {section.title}</Text>
+                <View style={styles.groupPill}>
+                  <Text style={styles.groupPillText}>
+                    {groupStats.find(g => g.title === section.title)?.filled ?? 0}/{section.data.length}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons
+                name={collapsedGroups[section.title] ? 'chevron-down' : 'chevron-up'}
+                size={16}
+                color={colors.accent}
+              />
+            </TouchableOpacity>
           )}
-          renderItem={({ item: match }) => (
-            <MatchRow
-              match={match}
-              homeScore={localScores[match.id]?.home ?? ''}
-              awayScore={localScores[match.id]?.away ?? ''}
-              locked={isLocked}
-              onHomeChange={v => handleScoreChange(match.id, 'home', v)}
-              onAwayChange={v => handleScoreChange(match.id, 'away', v)}
-            />
-          )}
+          renderItem={({ item: match, section }) => {
+            if (collapsedGroups[section.title]) return null;
+
+            return (
+              <MatchRow
+                match={match}
+                homeScore={localScores[match.id]?.home ?? ''}
+                awayScore={localScores[match.id]?.away ?? ''}
+                locked={isLocked}
+                onHomeChange={v => handleScoreChange(match.id, 'home', v)}
+                onAwayChange={v => handleScoreChange(match.id, 'away', v)}
+              />
+            );
+          }}
           ListHeaderComponent={
             <View>
               {/* Status / progress bar */}
@@ -216,6 +341,44 @@ export default function PredictionsScreen() {
                   )}
                 </View>
               )}
+
+              <View style={styles.groupToolsWrap}>
+                <View style={styles.groupToolsTop}>
+                  <Text style={styles.groupToolsTitle}>Navega por grupos</Text>
+                  <View style={styles.groupToolsBtns}>
+                    <TouchableOpacity style={styles.groupToolsBtn} onPress={expandAllGroups}>
+                      <Text style={styles.groupToolsBtnText}>Expandir</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.groupToolsBtn} onPress={collapseAllGroups}>
+                      <Text style={styles.groupToolsBtnText}>Contraer</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.groupChipsScroll}
+                >
+                  {groupStats.map(g => {
+                    const isCollapsed = collapsedGroups[g.title];
+                    return (
+                      <TouchableOpacity
+                        key={g.title}
+                        style={[styles.groupChip, !isCollapsed && styles.groupChipActive]}
+                        onPress={() => toggleGroup(g.title)}
+                      >
+                        <Text style={[styles.groupChipText, !isCollapsed && styles.groupChipTextActive]}>
+                          {g.title}
+                        </Text>
+                        <Text style={[styles.groupChipSub, !isCollapsed && styles.groupChipSubActive]}>
+                          {g.filled}/{g.total}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
 
               {error && (
                 <View style={styles.errorBanner}>
@@ -255,35 +418,8 @@ export default function PredictionsScreen() {
                       ? 'Tu quiniela fue enviada definitivamente.'
                       : 'Puedes modificar hasta el cierre.'}
                   </Text>
-                  {!isFinal && (
-                    <Button
-                      title="Modificar"
-                      variant="outline"
-                      onPress={() => { setMode('edit'); setError(null); }}
-                      style={{ marginTop: spacing.md }}
-                    />
-                  )}
                 </Card>
-              ) : (
-                <View style={styles.ctaRow}>
-                  <Button
-                    title={saving ? 'Guardando…' : 'Guardar'}
-                    variant="outline"
-                    onPress={handleSaveAll}
-                    loading={saving}
-                    disabled={filledCount === 0 || saving || submitting}
-                    fullWidth={false}
-                    style={{ flex: 1, marginRight: spacing.sm }}
-                  />
-                  <Button
-                    title="Enviar Quiniela"
-                    onPress={() => setShowConfirmSubmit(true)}
-                    disabled={!allFilled || saving || submitting}
-                    fullWidth={false}
-                    style={{ flex: 2 }}
-                  />
-                </View>
-              )}
+              ) : null}
               {!allFilled && mode === 'edit' && !isDeadlinePassed && (
                 <Text style={styles.hint}>
                   Faltan {matches.length - filledCount} partido{matches.length - filledCount !== 1 ? 's' : ''} para poder enviar
@@ -292,6 +428,69 @@ export default function PredictionsScreen() {
             </View>
           }
         />
+      )}
+
+      {!loading && (
+        <View pointerEvents="box-none" style={styles.floatingWrap}>
+          <View style={styles.floatingBar}>
+            <View style={styles.floatingTopRow}>
+              <Text style={styles.floatingTitle}>Acciones rapidas</Text>
+              <Text style={styles.floatingMeta}>{filledCount}/{matches.length} llenados</Text>
+            </View>
+
+            <View style={styles.floatingButtonsRow}>
+              {showEditActions ? (
+                <>
+                  <Button
+                    title={saving ? 'Guardando…' : 'Guardar'}
+                    variant="secondary"
+                    size="sm"
+                    onPress={handleSaveAll}
+                    loading={saving}
+                    disabled={filledCount === 0 || saving || submitting}
+                    fullWidth={false}
+                    icon={<Ionicons name="save-outline" size={16} color="#fff" />}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    title="Enviar"
+                    size="sm"
+                    variant="gold"
+                    onPress={() => setShowConfirmSubmit(true)}
+                    disabled={!allFilled || saving || submitting}
+                    fullWidth={false}
+                    icon={<Ionicons name="send" size={16} color={colors.navy} />}
+                    style={{ flex: 1.1 }}
+                  />
+                </>
+              ) : (
+                showModifyAction && (
+                  <Button
+                    title="Modificar"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => { setMode('edit'); setError(null); }}
+                    fullWidth={false}
+                    icon={<Ionicons name="create-outline" size={16} color="#fff" />}
+                    style={{ flex: 1 }}
+                  />
+                )
+              )}
+
+              <Button
+                title={exportingPdf ? 'Generando…' : 'PDF'}
+                variant="outline"
+                size="sm"
+                onPress={handleExportPdf}
+                disabled={printableRows.length === 0 || exportingPdf}
+                loading={exportingPdf}
+                fullWidth={false}
+                icon={<Ionicons name="print-outline" size={16} color={colors.primary} />}
+                style={{ flex: showEditActions || showModifyAction ? 0.9 : 1 }}
+              />
+            </View>
+          </View>
+        </View>
       )}
 
       {/* Confirm submit */}
@@ -355,20 +554,115 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   noPool: { fontSize: 15, color: colors.textMuted, textAlign: 'center' },
-  list: { padding: spacing.md, paddingBottom: spacing.xxl },
+  list: { padding: spacing.md, paddingBottom: spacing.xxl * 4 },
 
   groupHeader: {
-    backgroundColor: colors.primaryDark,
-    paddingVertical: spacing.xs + 2,
+    backgroundColor: '#08213E',
+    paddingVertical: spacing.xs + 3,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.xs,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#123A69',
+  },
+  groupHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   groupLabel: {
     fontSize: 11,
     fontWeight: '800',
     color: colors.accent,
-    letterSpacing: 1.5,
+    letterSpacing: 1.1,
+  },
+  groupPill: {
+    backgroundColor: 'rgba(201,168,76,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.45)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.xs + 3,
+    paddingVertical: 2,
+  },
+  groupPillText: {
+    fontSize: 10,
+    color: '#F8E7B2',
+    fontWeight: '700',
+  },
+
+  groupToolsWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  groupToolsTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  groupToolsTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  groupToolsBtns: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  groupToolsBtn: {
+    borderWidth: 1,
+    borderColor: '#CCE0F7',
+    backgroundColor: '#F6FAFF',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  groupToolsBtnText: {
+    fontSize: 10,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  groupChipsScroll: {
+    gap: spacing.xs,
+    paddingVertical: 2,
+  },
+  groupChip: {
+    borderWidth: 1,
+    borderColor: '#CFE0F1',
+    borderRadius: radius.md,
+    backgroundColor: '#F8FBFF',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    minWidth: 54,
+    alignItems: 'center',
+  },
+  groupChipActive: {
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
+  },
+  groupChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  groupChipTextActive: {
+    color: colors.accentBright,
+  },
+  groupChipSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  groupChipSubActive: {
+    color: '#C5D8F0',
   },
 
   progressCard: {
@@ -455,12 +749,49 @@ const styles = StyleSheet.create({
   submittedCardTitle: { fontSize: 18, fontWeight: '800', color: colors.navy },
   submittedCardSub: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
 
-  ctaRow: { flexDirection: 'row', gap: spacing.sm },
   hint: {
     fontSize: 12,
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.sm,
+  },
+  floatingWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  floatingBar: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl + 2,
+    borderWidth: 1,
+    borderColor: '#D4E2F1',
+    padding: spacing.sm,
+    gap: spacing.sm,
+    ...shadows.lg,
+  },
+  floatingTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  floatingTitle: {
+    fontSize: 11,
+    color: colors.text,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  floatingMeta: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  floatingButtonsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
 
   modalOverlay: {

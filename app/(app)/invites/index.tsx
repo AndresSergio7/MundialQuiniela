@@ -152,7 +152,10 @@ export default function InvitesScreen() {
 
       {pools.length > 1 && (
         <View style={styles.switcherWrap}>
-          <Text style={styles.switcherLabel}>Invitar en:</Text>
+          <View style={styles.switcherHeader}>
+            <Text style={styles.switcherLabel}>Selecciona quiniela</Text>
+            <Text style={styles.switcherHint}>Activa: {currentPool.name}</Text>
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -179,27 +182,46 @@ export default function InvitesScreen() {
       {/* Invite hero card — admin only */}
       {isAdmin && (
         <View style={styles.inviteHero}>
+          <View style={styles.heroGlowA} />
+          <View style={styles.heroGlowB} />
+
+          <View style={styles.inviteHeroTopRow}>
+            <View style={styles.inviteHeroLeft}>
+              <Text style={styles.inviteHeroEyebrow}>GESTION DE INVITADOS</Text>
+              <Text style={styles.inviteHeroTitle}>Invitar Participantes</Text>
+              <Text style={styles.inviteHeroSub}>
+                Comparte el link y llena tu quiniela con tu gente.
+              </Text>
+            </View>
+            <View style={styles.inviteHeroRight}>
+              <Ionicons name="link" size={24} color={colors.accentBright} />
+            </View>
+          </View>
+
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatChip}>
+              <Ionicons name="people-outline" size={14} color={colors.accentBright} />
+              <Text style={styles.heroStatText}>{members.length}/{currentPool.max_members}</Text>
+            </View>
+            <View style={styles.heroStatChip}>
+              <Ionicons name="person-add-outline" size={14} color={colors.accentBright} />
+              <Text style={styles.heroStatText}>
+                {spotsLeft > 0 ? `${spotsLeft} disponibles` : 'Quiniela llena'}
+              </Text>
+            </View>
+            <View style={styles.heroStatChip}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={colors.accentBright} />
+              <Text style={styles.heroStatText}>{invitesEnabled ? 'Invites ON' : 'Invites OFF'}</Text>
+            </View>
+          </View>
+
           <View style={styles.inviteHeroLeft}>
-            <Text style={styles.inviteHeroTitle}>Invitar Participantes</Text>
             <Text style={styles.inviteHeroSub}>
               Quiniela activa: {currentPool.name}
             </Text>
             <Text style={styles.inviteHeroSub}>
-              {invitesEnabled
-                ? 'Invitaciones habilitadas'
-                : 'Primero compra un plan para habilitar invitaciones'}
-            </Text>
-            <Text style={styles.inviteHeroSub}>
               Capacidad máxima: {currentPool.max_members} participante{currentPool.max_members !== 1 ? 's' : ''}
             </Text>
-            <Text style={styles.inviteHeroSub}>
-              {spotsLeft > 0
-                ? `${spotsLeft} lugar${spotsLeft !== 1 ? 'es' : ''} disponible${spotsLeft !== 1 ? 's' : ''} de ${currentPool.max_members}`
-                : 'Quiniela llena'}
-            </Text>
-          </View>
-          <View style={styles.inviteHeroRight}>
-            <Ionicons name="link" size={28} color={colors.accentBright} />
           </View>
 
           {error && (
@@ -225,10 +247,10 @@ export default function InvitesScreen() {
 
           <Button
             title={sharing ? 'Generando link…' : 'Compartir Link de Invitación'}
-            icon="share-social-outline"
+            icon={<Ionicons name="share-social-outline" size={18} color="#fff" />}
             onPress={handleShare}
             loading={sharing}
-            style={{ marginTop: spacing.md }}
+            style={{ marginTop: spacing.md, backgroundColor: colors.primaryLight }}
           />
         </View>
       )}
@@ -244,6 +266,7 @@ export default function InvitesScreen() {
           ListHeaderComponent={
             <View style={styles.listHeader}>
               <View style={styles.listHeaderLeft}>
+                <Ionicons name="people" size={16} color={colors.primary} />
                 <Text style={styles.listHeaderTitle}>Participantes</Text>
                 <View style={styles.memberCountBadge}>
                   <Text style={styles.memberCountText}>
@@ -251,6 +274,7 @@ export default function InvitesScreen() {
                   </Text>
                 </View>
               </View>
+              <Text style={styles.listHeaderSub}>Administra miembros y controla tu cupo</Text>
             </View>
           }
           renderItem={({ item: member }) => {
@@ -262,6 +286,7 @@ export default function InvitesScreen() {
 
             return (
               <View style={styles.memberCard}>
+                <View style={[styles.memberStripe, isOwner ? styles.memberStripeAdmin : styles.memberStripeMember]} />
                 <View style={styles.memberRow}>
                   <View style={[styles.avatar, isMe && styles.avatarMe]}>
                     <Text style={styles.avatarText}>{initial}</Text>
@@ -283,6 +308,7 @@ export default function InvitesScreen() {
                     <Ionicons name="person-circle-outline" size={22} color={colors.primary} />
                   ) : isAdmin ? (
                     <TouchableOpacity
+                      style={styles.memberActionBtn}
                       onPress={() =>
                         setConfirmRemoveId(isPendingRemove ? null : member.user_id)
                       }
@@ -290,7 +316,7 @@ export default function InvitesScreen() {
                     >
                       <Ionicons
                         name={isPendingRemove ? 'chevron-up' : 'close-circle-outline'}
-                        size={24}
+                        size={20}
                         color={isPendingRemove ? colors.textMuted : colors.error}
                       />
                     </TouchableOpacity>
@@ -364,41 +390,109 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     margin: spacing.md,
     borderRadius: radius.lg,
+    overflow: 'hidden',
     ...shadows.md,
+  },
+  heroGlowA: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(201,168,76,0.12)',
+    top: -70,
+    right: -30,
+  },
+  heroGlowB: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    bottom: -55,
+    left: -20,
+  },
+  inviteHeroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   inviteHeroLeft: { flex: 1 },
   inviteHeroRight: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    opacity: 0.5,
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(201,168,76,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.35)',
   },
-  inviteHeroTitle: { ...typography.h3, color: '#fff', marginBottom: 2 },
-  inviteHeroSub: { ...typography.caption, color: 'rgba(255,255,255,0.6)' },
+  inviteHeroEyebrow: {
+    ...typography.tiny,
+    color: '#BFEED7',
+    letterSpacing: 1.1,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
+  },
+  inviteHeroTitle: { ...typography.h3, color: '#fff', marginBottom: 3 },
+  inviteHeroSub: { ...typography.caption, color: 'rgba(255,255,255,0.72)' },
+  heroStatsRow: {
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  heroStatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.38)',
+    backgroundColor: 'rgba(13,27,42,0.22)',
+  },
+  heroStatText: {
+    ...typography.tiny,
+    color: '#FDF6DC',
+    fontWeight: '700',
+  },
   switcherWrap: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
+  switcherHeader: {
+    marginBottom: spacing.xs,
+  },
   switcherLabel: {
+    ...typography.tiny,
+    color: colors.text,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  switcherHint: {
     ...typography.caption,
     color: colors.textMuted,
-    marginBottom: spacing.xs,
+    marginTop: 2,
   },
   switcherList: { gap: spacing.xs, paddingBottom: spacing.xs },
   poolChip: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#F6FAFF',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#CFE0F2',
     borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
   poolChipActive: {
-    backgroundColor: colors.primaryDark,
-    borderColor: colors.primaryDark,
+    backgroundColor: colors.navy,
+    borderColor: colors.accent,
   },
-  poolChipText: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
-  poolChipTextActive: { color: '#fff' },
+  poolChipText: { ...typography.caption, color: colors.text, fontWeight: '700' },
+  poolChipTextActive: { color: colors.accentLight },
 
   errorBanner: {
     flexDirection: 'row',
@@ -420,11 +514,12 @@ const styles = StyleSheet.create({
   successText: { ...typography.caption, color: '#86efac', fontWeight: '600' },
 
   list: { padding: spacing.md, paddingBottom: spacing.xxl },
-  listHeader: { marginBottom: spacing.sm },
+  listHeader: { marginBottom: spacing.sm, gap: spacing.xs },
   listHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   listHeaderTitle: { ...typography.label, color: colors.text },
+  listHeaderSub: { ...typography.caption, color: colors.textMuted },
   memberCountBadge: {
-    backgroundColor: colors.border,
+    backgroundColor: '#E5EEF7',
     borderRadius: radius.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
@@ -436,7 +531,24 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#D8E4F0',
     ...shadows.sm,
+  },
+  memberStripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: radius.md,
+    borderBottomLeftRadius: radius.md,
+  },
+  memberStripeAdmin: {
+    backgroundColor: colors.accent,
+  },
+  memberStripeMember: {
+    backgroundColor: colors.primaryLight,
   },
   memberRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {
@@ -465,6 +577,16 @@ const styles = StyleSheet.create({
   roleBadgeAdmin: { backgroundColor: colors.accentLight },
   roleText: { ...typography.tiny, color: colors.textMuted },
   roleTextAdmin: { color: colors.accent, fontWeight: '600' },
+  memberActionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FBFF',
+    borderWidth: 1,
+    borderColor: '#D6E2F1',
+  },
 
   confirmRow: {
     marginTop: spacing.sm,

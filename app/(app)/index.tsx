@@ -147,6 +147,9 @@ export default function HomeScreen() {
   const daysLeft = Math.max(0, Math.ceil(msLeft / 86400000));
   const hasAccess = entitlement?.has_app_access ?? false;
   const confirmIsAdmin = confirmPool ? confirmPool.admin_id === user?.id : false;
+  const totalPools = pools.length;
+  const submittedPools = Object.values(submissions).filter((s) => s?.is_valid).length;
+  const finalPools = Object.values(submissions).filter((s) => s?.is_final).length;
 
   return (
     <ScrollView
@@ -157,28 +160,41 @@ export default function HomeScreen() {
       {/* ── HERO BANNER ── */}
       <View style={styles.hero}>
         <View style={styles.heroPattern}>
-          {/* decorative circles */}
-          <View style={styles.heroBall1} />
           <View style={styles.heroBall2} />
+          <View style={styles.heroBall3} />
         </View>
-        <View style={styles.heroContent}>
+        <View style={styles.heroTopRow}>
           <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>⚽  FIFA WORLD CUP 2026</Text>
+            <Text style={styles.heroBadgeText}>FIFA WORLD CUP 2026</Text>
           </View>
-          <Text style={styles.heroTitle}>Mundial{'\n'}Quiniela</Text>
-          <Text style={styles.heroSub}>
-            {daysLeft > 0
-              ? `${daysLeft} días para el inicio`
-              : '¡El torneo ha comenzado!'}
-          </Text>
-          {profile && (
-            <View style={styles.heroGreeting}>
-              <Ionicons name="person-circle" size={16} color={colors.accent} />
-              <Text style={styles.heroGreetingText}>
-                Bienvenido, {profile.username}
-              </Text>
-            </View>
-          )}
+          <View style={styles.heroCountdownPill}>
+            <Ionicons name="time-outline" size={14} color={colors.accentBright} />
+            <Text style={styles.heroCountdownText}>
+              {daysLeft > 0 ? `${daysLeft} días` : 'En juego'}
+            </Text>
+          </View>
+        </View>
+
+        {profile && (
+          <View style={styles.heroGreeting}>
+            <Ionicons name="person-circle" size={16} color={colors.accent} />
+            <Text style={styles.heroGreetingText}>Hola, {profile.username}</Text>
+          </View>
+        )}
+
+        <View style={styles.heroStatsRow}>
+          <View style={styles.heroStatChip}>
+            <Text style={styles.heroStatValue}>{totalPools}</Text>
+            <Text style={styles.heroStatLabel}>Quinielas</Text>
+          </View>
+          <View style={styles.heroStatChip}>
+            <Text style={styles.heroStatValue}>{submittedPools}</Text>
+            <Text style={styles.heroStatLabel}>Listas</Text>
+          </View>
+          <View style={styles.heroStatChip}>
+            <Text style={styles.heroStatValue}>{finalPools}</Text>
+            <Text style={styles.heroStatLabel}>Cerradas</Text>
+          </View>
         </View>
       </View>
 
@@ -191,12 +207,38 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
+      <View style={[styles.quickDeck, !hasAccess && styles.quickDeckWithBanner]}>
+        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/predictions')}>
+          <View style={[styles.quickIconWrap, { backgroundColor: '#EAF6EE' }]}>
+            <Ionicons name="football-outline" size={18} color={colors.primary} />
+          </View>
+          <Text style={styles.quickTitle}>Quiniela</Text>
+          <Text style={styles.quickSub}>Captura tus marcadores</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/live')}>
+          <View style={[styles.quickIconWrap, { backgroundColor: '#FDECEC' }]}>
+            <Ionicons name="radio-outline" size={18} color={colors.error} />
+          </View>
+          <Text style={styles.quickTitle}>En Vivo</Text>
+          <Text style={styles.quickSub}>Minuto a minuto mock</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/standings')}>
+          <View style={[styles.quickIconWrap, { backgroundColor: '#FFF5D7' }]}>
+            <Ionicons name="podium-outline" size={18} color={colors.accent} />
+          </View>
+          <Text style={styles.quickTitle}>Tabla</Text>
+          <Text style={styles.quickSub}>Revisa posiciones</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── My Pools ── */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleRow}>
             <Ionicons name="layers" size={16} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Mis Quinielas</Text>
+            <Text style={styles.sectionTitle}>Tus Quinielas Activas</Text>
           </View>
           <TouchableOpacity style={styles.newBtn} onPress={openCreateModal}>
             <Ionicons name="add" size={14} color="#fff" />
@@ -347,8 +389,8 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: colors.primaryDark,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl + spacing.lg,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -374,7 +416,22 @@ const styles = StyleSheet.create({
     bottom: -30,
     left: -20,
   },
-  heroContent: { position: 'relative' },
+  heroBall3: {
+    position: 'absolute',
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.32)',
+    top: 24,
+    left: 30,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
   heroBadge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(201,168,76,0.18)',
@@ -383,7 +440,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
   },
   heroBadgeText: {
     fontSize: 11,
@@ -391,24 +447,51 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 1,
   },
-  heroTitle: {
-    fontSize: 40,
+  heroCountdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(232,197,71,0.4)',
+    backgroundColor: 'rgba(13,27,42,0.25)',
+  },
+  heroCountdownText: {
+    fontSize: 11,
+    color: colors.accentBright,
+    fontWeight: '800',
+  },
+  heroStatsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  heroStatChip: {
+    flex: 1,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: spacing.xs + 2,
+    alignItems: 'center',
+  },
+  heroStatValue: {
+    fontSize: 16,
     fontWeight: '900',
     color: '#fff',
-    lineHeight: 44,
-    letterSpacing: -1,
-    marginBottom: spacing.sm,
   },
-  heroSub: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.65)',
-    fontWeight: '500',
-    marginBottom: spacing.md,
+  heroStatLabel: {
+    fontSize: 10,
+    color: '#C8D8EB',
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   heroGreeting: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    marginBottom: spacing.md,
   },
   heroGreetingText: {
     fontSize: 13,
@@ -424,12 +507,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
     gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: -spacing.lg,
+    borderRadius: radius.lg,
+    ...shadows.md,
   },
   accessText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
     color: colors.navy,
+  },
+
+  quickDeck: {
+    marginTop: -spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  quickDeckWithBanner: {
+    marginTop: spacing.md,
+  },
+  quickCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#D6E1EE',
+    padding: spacing.sm,
+    ...shadows.md,
+  },
+  quickIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  quickTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  quickSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
   },
 
   // Section
