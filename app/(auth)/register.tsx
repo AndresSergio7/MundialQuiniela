@@ -49,11 +49,7 @@ export default function RegisterScreen() {
         fullName: fullName.trim(),
       });
 
-      if (session) {
-        // Auth listener en root layout se encarga de redirigir.
-        return;
-      }
-
+      if (session) return;
       setSuccessMsg('Revisa tu email para confirmar tu cuenta y luego inicia sesión.');
     } catch (error) {
       setErrorMsg(error instanceof AppError ? error.message : 'Error al crear la cuenta. Intenta de nuevo.');
@@ -70,94 +66,114 @@ export default function RegisterScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Championship header */}
         <View style={styles.hero}>
-          <View style={styles.ballWrap}>
-            <Text style={styles.ball}>⚽</Text>
+          <View style={styles.heroBall1} />
+          <View style={styles.heroBall2} />
+          
+          <View style={styles.heroContent}>
+            <TouchableOpacity 
+              style={styles.backBtn}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.logoWrap}>
+              <Ionicons name="person-add" size={40} color={colors.accent} />
+            </View>
+            <Text style={styles.brand}>Únete a la Jugada</Text>
+            <Text style={styles.heroSub}>Crea tu cuenta y empieza a ganar</Text>
           </View>
-          <Text style={styles.brand}>Crear Cuenta</Text>
-          <Text style={styles.heroSub}>Únete al Mundial 2026</Text>
         </View>
 
-        {/* Form card */}
         <View style={styles.formCard}>
           {errorMsg ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-              <Text style={styles.errorBannerText}> {errorMsg}</Text>
+              <Ionicons name="alert-circle" size={18} color={colors.error} />
+              <Text style={styles.errorBannerText}>{errorMsg}</Text>
             </View>
           ) : null}
 
           {successMsg ? (
             <View style={styles.successBanner}>
-              <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
-              <View style={{ flex: 1, marginLeft: spacing.xs }}>
+              <Ionicons name="mail-unread" size={24} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.successBannerTitle}>¡Casi listo!</Text>
                 <Text style={styles.successBannerText}>{successMsg}</Text>
-                <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-                  <Text style={styles.successLink}>Ir a iniciar sesión →</Text>
+                <TouchableOpacity 
+                  style={styles.successCta}
+                  onPress={() => router.replace('/(auth)/login')}
+                >
+                  <Text style={styles.successCtaText}>Ir al Login →</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          ) : null}
+          ) : (
+            <>
+              <View style={styles.inputGroup}>
+                <Input
+                  label="Nombre de Usuario"
+                  value={username}
+                  onChangeText={(t) => { setUsername(t); setErrorMsg(''); }}
+                  placeholder="ej. el_crack_10"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={fieldErrors.username}
+                  leftIcon={<Ionicons name="at-outline" size={20} color={colors.textLight} />}
+                />
+                <Input
+                  label="Nombre Completo"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholder="Tu nombre y apellido"
+                  leftIcon={<Ionicons name="person-outline" size={20} color={colors.textLight} />}
+                />
+                <Input
+                  label="Correo Electrónico"
+                  value={email}
+                  onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
+                  placeholder="nombre@ejemplo.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={fieldErrors.email}
+                  leftIcon={<Ionicons name="mail-outline" size={20} color={colors.textLight} />}
+                />
+                <Input
+                  label="Contraseña"
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
+                  placeholder="Mínimo 6 caracteres"
+                  secureTextEntry
+                  error={fieldErrors.password}
+                  leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.textLight} />}
+                />
+              </View>
 
-          <Input
-            label="Usuario"
-            value={username}
-            onChangeText={(t) => { setUsername(t); setErrorMsg(''); }}
-            placeholder="el_crack"
-            autoCapitalize="none"
-            autoCorrect={false}
-            error={fieldErrors.username}
-          />
-          <Input
-            label="Nombre completo (opcional)"
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Lionel Messi"
-          />
-          <Input
-            label="Email"
-            value={email}
-            onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
-            placeholder="tu@email.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            error={fieldErrors.email}
-          />
-          <Input
-            label="Contraseña"
-            value={password}
-            onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
-            placeholder="••••••••"
-            secureTextEntry
-            error={fieldErrors.password}
-          />
+              <Button
+                title="Crear mi Perfil"
+                onPress={handleRegister}
+                loading={loading}
+                size="lg"
+                variant="primary"
+                style={styles.registerBtn}
+              />
 
-          <Button
-            title="Crear Cuenta"
-            icon="person-add-outline"
-            onPress={handleRegister}
-            loading={loading}
-            style={{ marginTop: spacing.sm }}
-          />
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>¿Ya tienes cuenta?</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.switchText}>
-              Iniciar sesión{' '}
-              <Text style={styles.switchLink}>aquí →</Text>
-            </Text>
-          </TouchableOpacity>
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  style={styles.switchButton}
+                  onPress={() => router.back()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.switchText}>
+                    ¿Ya tienes cuenta? <Text style={styles.switchLink}>Inicia sesión</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -167,80 +183,59 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.primaryDark },
   container: { flexGrow: 1 },
-
   hero: {
     backgroundColor: colors.primaryDark,
-    alignItems: 'center',
-    paddingTop: spacing.xxl,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.xl,
-  },
-  ballWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
+    height: 260,
     justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  ball: { fontSize: 40 },
-  brand: { ...typography.h1, color: '#fff', textAlign: 'center' },
-  heroSub: {
-    ...typography.body,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: spacing.xs,
-  },
-
-  formCard: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.xl,
-    paddingTop: spacing.xl,
-    gap: spacing.sm,
-    ...shadows.lg,
-  },
-
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.errorLight,
-    borderWidth: 1,
-    borderColor: colors.error,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  errorBannerText: { ...typography.bodyMd, color: colors.error, flex: 1 },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.success,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  successBannerText: { ...typography.bodyMd, color: colors.success },
-  successLink: {
-    color: colors.primary,
-    fontWeight: '700',
-    marginTop: spacing.xs,
-    fontSize: 14,
-  },
-
-  divider: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.xs,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { ...typography.caption, color: colors.textLight, marginHorizontal: spacing.sm },
-
-  switchButton: { alignItems: 'center', paddingVertical: spacing.xs, paddingBottom: spacing.xl },
-  switchText: { ...typography.body, color: colors.textMuted },
-  switchLink: { color: colors.primary, fontWeight: '700' },
+  heroContent: { alignItems: 'center', zIndex: 10, width: '100%' },
+  backBtn: {
+    position: 'absolute', top: -20, left: 20, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center',
+  },
+  heroBall1: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.04)', top: -40, right: -30,
+  },
+  heroBall2: {
+    position: 'absolute', width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(201,168,76,0.06)', bottom: -20, left: -20,
+  },
+  logoWrap: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: spacing.sm,
+  },
+  brand: { fontSize: 28, fontWeight: '900', color: '#fff', textAlign: 'center' },
+  heroSub: { fontSize: 14, color: 'rgba(255,255,255,0.6)', marginTop: 4, fontWeight: '500' },
+  formCard: {
+    flex: 1, backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 10,
+    borderTopRightRadius: radius.xl + 10, paddingHorizontal: spacing.xl, paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl, marginTop: -20, ...shadows.lg,
+  },
+  inputGroup: { gap: spacing.sm },
+  registerBtn: { marginTop: spacing.xl, ...shadows.md },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.errorLight,
+    borderWidth: 1, borderColor: colors.error + '40', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg,
+  },
+  errorBannerText: { fontSize: 13, color: colors.error, fontWeight: '600', flex: 1 },
+  successBanner: {
+    backgroundColor: colors.successLight, borderWidth: 1, borderColor: colors.success + '40',
+    borderRadius: radius.lg, padding: spacing.xl, alignItems: 'center', gap: spacing.md, marginTop: spacing.md,
+  },
+  successBannerTitle: { fontSize: 18, fontWeight: '800', color: colors.success },
+  successBannerText: { fontSize: 14, color: colors.text, textAlign: 'center', lineHeight: 20 },
+  successCta: {
+    backgroundColor: colors.success, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderRadius: radius.full, marginTop: spacing.sm,
+  },
+  successCtaText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  footer: { marginTop: spacing.xl },
+  switchButton: { alignItems: 'center', paddingVertical: spacing.sm },
+  switchText: { fontSize: 15, color: colors.textMuted, fontWeight: '500' },
+  switchLink: { color: colors.primary, fontWeight: '800' },
 });

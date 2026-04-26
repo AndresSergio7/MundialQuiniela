@@ -35,10 +35,6 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       const redirectTo = getPasswordRecoveryRedirectUrl();
-      if (__DEV__) {
-        // Copia esta URL en Supabase → Authentication → URL configuration → Redirect URLs
-        console.info('[auth] recovery redirectTo:', redirectTo);
-      }
       await requestPasswordReset(email.trim(), redirectTo);
       setSent(true);
     } catch (error) {
@@ -58,69 +54,89 @@ export default function ForgotPasswordScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <TouchableOpacity
-            style={styles.backRow}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Volver"
-          >
-            <Ionicons name="chevron-back" size={22} color="rgba(255,255,255,0.9)" />
-            <Text style={styles.backText}>Volver</Text>
-          </TouchableOpacity>
-          <View style={styles.ballWrap}>
-            <Ionicons name="key-outline" size={36} color={colors.accentBright} />
+          <View style={styles.heroBall1} />
+          <View style={styles.heroBall2} />
+          
+          <View style={styles.heroContent}>
+            <TouchableOpacity 
+              style={styles.backBtn}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            
+            <View style={styles.logoWrap}>
+              <Ionicons name="key" size={40} color={colors.accent} />
+            </View>
+            <Text style={styles.brand}>Recuperar</Text>
+            <Text style={styles.heroSub}>Te ayudamos a volver al juego</Text>
           </View>
-          <Text style={styles.brand}>Recuperar contraseña</Text>
-          <Text style={styles.heroSub}>
-            Te enviaremos un enlace para elegir una contraseña nueva.
-          </Text>
         </View>
 
         <View style={styles.formCard}>
           {errorMsg ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-              <Text style={styles.errorBannerText}> {errorMsg}</Text>
+              <Ionicons name="alert-circle" size={18} color={colors.error} />
+              <Text style={styles.errorBannerText}>{errorMsg}</Text>
             </View>
           ) : null}
 
           {sent ? (
-            <View style={styles.successBanner}>
-              <Ionicons name="mail-outline" size={20} color={colors.success} />
-              <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                <Text style={styles.successTitle}>Revisa tu correo</Text>
-                <Text style={styles.successBody}>
-                  Si existe una cuenta con ese email, recibirás un enlace para restablecer la contraseña.
-                </Text>
-                <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-                  <Text style={styles.successLink}>Volver al inicio de sesión →</Text>
-                </TouchableOpacity>
+            <View style={styles.successCard}>
+              <View style={styles.successIconWrap}>
+                <Ionicons name="mail-unread" size={48} color={colors.success} />
+              </View>
+              <Text style={styles.successTitle}>¡Email Enviado!</Text>
+              <Text style={styles.successBody}>
+                Hemos enviado las instrucciones para restablecer tu contraseña a <Text style={styles.boldEmail}>{email}</Text>.
+              </Text>
+              <View style={styles.successFooter}>
+                <Text style={styles.hintText}>¿No recibiste nada? Revisa tu carpeta de spam.</Text>
+                <Button
+                  title="Volver al Login"
+                  onPress={() => router.replace('/(auth)/login')}
+                  variant="primary"
+                  style={styles.backLoginBtn}
+                />
               </View>
             </View>
           ) : (
             <>
+              <View style={styles.formHeader}>
+                <Text style={styles.formTitle}>¿Olvidaste tu clave?</Text>
+                <Text style={styles.formSub}>
+                  Ingresa tu correo y te enviaremos un enlace para recuperarla.
+                </Text>
+              </View>
+
               <Input
-                label="Email"
+                label="Tu Correo Electrónico"
                 value={email}
                 onChangeText={(t) => {
                   setEmail(t);
                   setErrorMsg('');
                   setFieldError('');
                 }}
-                placeholder="tu@email.com"
+                placeholder="nombre@ejemplo.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
                 error={fieldError}
+                leftIcon={<Ionicons name="mail-outline" size={20} color={colors.textLight} />}
               />
+
               <Button
-                title="Enviar enlace"
-                icon="send-outline"
+                title="Enviar Instrucciones"
                 onPress={handleSubmit}
                 loading={loading}
-                style={{ marginTop: spacing.sm }}
+                size="lg"
+                variant="primary"
+                style={styles.submitBtn}
+                icon="send-outline"
               />
             </>
           )}
@@ -136,78 +152,162 @@ const styles = StyleSheet.create({
 
   hero: {
     backgroundColor: colors.primaryDark,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.xl,
-  },
-  backRow: {
-    flexDirection: 'row',
+    height: 240,
+    justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginBottom: spacing.md,
-    paddingVertical: spacing.xs,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  backText: {
-    ...typography.bodyMd,
-    color: 'rgba(255,255,255,0.9)',
-    marginLeft: 2,
+  heroContent: {
+    alignItems: 'center',
+    zIndex: 10,
+    width: '100%',
   },
-  ballWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.full,
+  backBtn: {
+    position: 'absolute',
+    top: -20,
+    left: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBall1: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    top: -30,
+    right: -20,
+  },
+  heroBall2: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(201,168,76,0.06)',
+    bottom: -10,
+    left: 20,
+  },
+  logoWrap: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: spacing.sm,
   },
-  brand: { ...typography.h1, color: '#fff', textAlign: 'center' },
-  heroSub: {
-    ...typography.body,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: spacing.sm,
+  brand: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#fff',
     textAlign: 'center',
+  },
+  heroSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+    fontWeight: '500',
   },
 
   formCard: {
     flex: 1,
     backgroundColor: colors.background,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.xl,
-    paddingTop: spacing.xxl,
-    gap: spacing.sm,
+    borderTopLeftRadius: radius.xl + 10,
+    borderTopRightRadius: radius.xl + 10,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+    marginTop: -20,
     ...shadows.lg,
+  },
+  formHeader: {
+    marginBottom: spacing.xl,
+  },
+  formTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  formSub: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginTop: 6,
+    lineHeight: 20,
+  },
+
+  submitBtn: {
+    marginTop: spacing.xl,
+    ...shadows.md,
   },
 
   errorBanner: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.errorLight,
     borderWidth: 1,
-    borderColor: colors.error,
-    borderRadius: radius.sm,
+    borderColor: colors.error + '40',
+    borderRadius: radius.md,
     padding: spacing.md,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.lg,
   },
-  errorBannerText: { ...typography.bodyMd, color: colors.error, flex: 1 },
+  errorBannerText: {
+    fontSize: 13,
+    color: colors.error,
+    fontWeight: '600',
+    flex: 1,
+  },
 
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.success,
-    borderRadius: radius.sm,
-    padding: spacing.md,
+  successCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
   },
-  successTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
-  successBody: { ...typography.bodyMd, color: colors.textMuted },
-  successLink: {
-    color: colors.primary,
-    fontWeight: '700',
-    marginTop: spacing.md,
+  successIconWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: colors.successLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.success,
+    marginBottom: spacing.sm,
+  },
+  successBody: {
     fontSize: 15,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: spacing.sm,
+  },
+  boldEmail: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  successFooter: {
+    marginTop: spacing.xxl,
+    width: '100%',
+    alignItems: 'center',
+  },
+  hintText: {
+    fontSize: 12,
+    color: colors.textLight,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  backLoginBtn: {
+    width: '100%',
   },
 });

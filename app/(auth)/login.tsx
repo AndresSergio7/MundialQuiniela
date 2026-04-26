@@ -39,7 +39,6 @@ export default function LoginScreen() {
 
     try {
       await signIn(email.trim(), password);
-      // Auth listener en root layout se encarga de redirigir.
     } catch (error) {
       setErrorMsg(error instanceof AppError ? error.message : 'Error al iniciar sesión. Intenta de nuevo.');
     } finally {
@@ -55,77 +54,94 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Championship header */}
         <View style={styles.hero}>
-          <View style={styles.ballWrap}>
-            <Text style={styles.ball}>⚽</Text>
-          </View>
-          <Text style={styles.brand}>Mundial Quiniela</Text>
-          <View style={styles.worldCupBadge}>
-            <Text style={styles.worldCupText}>FIFA WORLD CUP 2026</Text>
+          <View style={styles.heroBall1} />
+          <View style={styles.heroBall2} />
+          <View style={styles.heroBall3} />
+
+          <View style={styles.heroContent}>
+            <View style={styles.logoWrap}>
+              <Ionicons name="football" size={48} color={colors.accent} />
+            </View>
+            <Text style={styles.brand}>Mundial Quiniela</Text>
+            <View style={styles.worldCupBadge}>
+              <Text style={styles.worldCupText}>CHAMPIONSHIP EDITION 2026</Text>
+            </View>
           </View>
         </View>
 
-        {/* Form card */}
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Iniciar Sesión</Text>
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>¡Bienvenido de nuevo!</Text>
+            <Text style={styles.formSub}>Ingresa tus credenciales para continuar</Text>
+          </View>
 
           {errorMsg ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-              <Text style={styles.errorBannerText}> {errorMsg}</Text>
+              <Ionicons name="alert-circle" size={18} color={colors.error} />
+              <Text style={styles.errorBannerText}>{errorMsg}</Text>
             </View>
           ) : null}
 
-          <Input
-            label="Email"
-            value={email}
-            onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
-            placeholder="tu@email.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            error={fieldErrors.email}
-          />
-          <Input
-            label="Contraseña"
-            value={password}
-            onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
-            placeholder="••••••••"
-            secureTextEntry
-            error={fieldErrors.password}
-          />
+          <View style={styles.inputGroup}>
+            <Input
+              label="Correo Electrónico"
+              value={email}
+              onChangeText={(t) => { setEmail(t); setErrorMsg(''); }}
+              placeholder="nombre@ejemplo.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              error={fieldErrors.email}
+              leftIcon={<Ionicons name="mail-outline" size={20} color={colors.textLight} />}
+            />
+            <Input
+              label="Contraseña"
+              value={password}
+              onChangeText={(t) => { setPassword(t); setErrorMsg(''); }}
+              placeholder="••••••••"
+              secureTextEntry
+              error={fieldErrors.password}
+              leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.textLight} />}
+            />
 
-          <TouchableOpacity
-            style={styles.forgotLinkWrap}
-            onPress={() => router.push('/(auth)/forgot-password')}
-          >
-            <Text style={styles.forgotLink}>¿Olvidaste tu contraseña?</Text>
-          </TouchableOpacity>
-
-          <Button
-            title="Iniciar Sesión"
-            onPress={handleLogin}
-            loading={loading}
-            style={{ marginTop: spacing.sm }}
-          />
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>¿Primera vez?</Text>
-            <View style={styles.dividerLine} />
+            <TouchableOpacity
+              style={styles.forgotLinkWrap}
+              onPress={() => router.push('/(auth)/forgot-password')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.forgotLink}>¿Olvidaste tu contraseña?</Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => router.push('/(auth)/register')}
-          >
-            <Text style={styles.switchText}>
-              Crear cuenta{' '}
-              <Text style={styles.switchLink}>gratis →</Text>
-            </Text>
-          </TouchableOpacity>
+          <Button
+            title="Entrar a la Cancha"
+            onPress={handleLogin}
+            loading={loading}
+            size="lg"
+            variant="primary"
+            style={styles.loginBtn}
+          />
+
+          <View style={styles.footer}>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>O TAMBIÉN</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.switchButton}
+              onPress={() => router.push('/(auth)/register')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.switchText}>
+                ¿No tienes cuenta? <Text style={styles.switchLink}>Regístrate gratis</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -135,77 +151,60 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.primaryDark },
   container: { flexGrow: 1 },
-
   hero: {
     backgroundColor: colors.primaryDark,
-    alignItems: 'center',
-    paddingTop: spacing.xxxl,
-    paddingBottom: spacing.xxl,
-    paddingHorizontal: spacing.xl,
-  },
-  ballWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
+    height: 300,
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    alignItems: 'center',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  ball: { fontSize: 44 },
-  brand: { ...typography.h1, color: '#fff', textAlign: 'center' },
+  heroContent: { alignItems: 'center', zIndex: 10 },
+  heroBall1: {
+    position: 'absolute', width: 220, height: 220, borderRadius: 110,
+    backgroundColor: 'rgba(255,255,255,0.04)', top: -80, right: -60,
+  },
+  heroBall2: {
+    position: 'absolute', width: 140, height: 140, borderRadius: 70,
+    backgroundColor: 'rgba(201,168,76,0.06)', bottom: 20, left: -40,
+  },
+  heroBall3: {
+    position: 'absolute', width: 100, height: 100, borderRadius: 50,
+    borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', top: 40, left: 40,
+  },
+  logoWrap: {
+    width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: spacing.md, ...shadows.md,
+  },
+  brand: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -0.5, textAlign: 'center' },
   worldCupBadge: {
-    backgroundColor: 'rgba(201,168,76,0.2)',
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginTop: spacing.sm,
+    backgroundColor: 'rgba(201,168,76,0.15)', borderRadius: radius.full, borderWidth: 1,
+    borderColor: colors.accent + '60', paddingHorizontal: spacing.md, paddingVertical: 5, marginTop: spacing.sm,
   },
-  worldCupText: {
-    ...typography.tiny,
-    color: colors.accentBright,
-    letterSpacing: 1.5,
-    fontWeight: '700',
-  },
-
+  worldCupText: { fontSize: 10, color: colors.accentBright, letterSpacing: 1.2, fontWeight: '800' },
   formCard: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.xl,
-    paddingTop: spacing.xxl,
-    gap: spacing.sm,
-    ...shadows.lg,
+    flex: 1, backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 10,
+    borderTopRightRadius: radius.xl + 10, paddingHorizontal: spacing.xl, paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxl, marginTop: -30, ...shadows.lg,
   },
-  formTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.xs },
-
-  forgotLinkWrap: { alignSelf: 'flex-end', marginTop: -spacing.xs, marginBottom: spacing.xs },
-  forgotLink: { ...typography.bodyMd, color: colors.primary, fontWeight: '600' },
-
+  formHeader: { marginBottom: spacing.xl },
+  formTitle: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
+  formSub: { fontSize: 14, color: colors.textMuted, marginTop: 4, fontWeight: '500' },
+  inputGroup: { gap: spacing.sm },
+  forgotLinkWrap: { alignSelf: 'flex-end', paddingVertical: spacing.xs },
+  forgotLink: { fontSize: 14, color: colors.primary, fontWeight: '700' },
+  loginBtn: { marginTop: spacing.xl, ...shadows.md },
   errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.errorLight,
-    borderWidth: 1,
-    borderColor: colors.error,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.xs,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.errorLight,
+    borderWidth: 1, borderColor: colors.error + '40', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg,
   },
-  errorBannerText: { ...typography.bodyMd, color: colors.error },
-
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.sm,
-  },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { ...typography.caption, color: colors.textLight, marginHorizontal: spacing.sm },
-
-  switchButton: { alignItems: 'center', paddingVertical: spacing.xs },
-  switchText: { ...typography.body, color: colors.textMuted },
-  switchLink: { color: colors.primary, fontWeight: '700' },
+  errorBannerText: { fontSize: 13, color: colors.error, fontWeight: '600', flex: 1 },
+  footer: { marginTop: spacing.xxl },
+  divider: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xl },
+  dividerLine: { flex: 1, height: 1.5, backgroundColor: '#E2E8F0' },
+  dividerText: { fontSize: 10, fontWeight: '800', color: colors.textLight, marginHorizontal: spacing.md, letterSpacing: 1 },
+  switchButton: { alignItems: 'center', paddingVertical: spacing.sm },
+  switchText: { fontSize: 15, color: colors.textMuted, fontWeight: '500' },
+  switchLink: { color: colors.primary, fontWeight: '800' },
 });
