@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { supabase } from '@/lib/supabase';
 import { purchasePoolPlan, restorePurchases } from '@/lib/payments';
-import { createPoolLegacy as createPool } from '@/services/pools.service';
+import { createPoolLegacy as createPool, listMyPools } from '@/services/pools.service';
+import { applyUnusedEntitlementToPool, getSingleSoloAdminPoolId } from '@/services/invites.service';
+import { usePoolStore } from '@/store/pool';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -28,7 +30,17 @@ const POPULAR_PLAN_IDX = 1;
 
 export default function PurchaseScreen() {
   const router = useRouter();
+  const { upgradePoolId: upgradePoolIdParam } = useLocalSearchParams<{
+    upgradePoolId?: string | string[];
+  }>();
+  const upgradePoolId = Array.isArray(upgradePoolIdParam)
+    ? upgradePoolIdParam[0]
+    : upgradePoolIdParam;
+
   const { user } = useAuthStore();
+  const setPools = usePoolStore((s) => s.setPools);
+  const setCurrentPool = usePoolStore((s) => s.setCurrentPool);
+  const currentPool = usePoolStore((s) => s.currentPool);
 
   const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -68,6 +80,30 @@ export default function PurchaseScreen() {
     setPurchasing(null);
 
     if (success) {
+      const upgradeTarget =
+        upgradePoolId ?? (await getSingleSoloAdminPoolId(user.id));
+
+      if (upgradeTarget) {
+        const { error: attachError } = await applyUnusedEntitlementToPool(user.id, upgradeTarget);
+        if (!attachError) {
+          await refreshUnused();
+          const nextPools = await listMyPools(user.id);
+          setPools(nextPools);
+          const updated = nextPools.find((p) => p.id === upgradeTarget);
+          if (updated && currentPool?.id === upgradeTarget) {
+            setCurrentPool(updated);
+          }
+          router.replace('/(app)/invites');
+          return;
+        }
+        setPurchaseError(
+          attachError === 'PURCHASE_REQUIRED'
+            ? 'No se pudo aplicar la compra a la quiniela. Usa "Crear" abajo o vuelve a intentar.'
+            : attachError,
+        );
+        if (upgradePoolId) return;
+      }
+
       const list = await refreshUnused();
       setPoolName('');
       setCreateError('');
@@ -138,7 +174,9 @@ export default function PurchaseScreen() {
           </View>
           <Text style={styles.heroTitle}>Crear Quiniela</Text>
           <Text style={styles.heroSubtitle}>
-            Cada compra te permite crear una quiniela con el límite de participantes elegido.
+            {upgradePoolId
+              ? 'Tu compra se aplicará a la quiniela desde la que viniste: más cupo para invitar.'
+              : 'Cada compra da cupo para invitar; si solo tienes una quiniela gratis, se actualiza sola. También puedes crear otra quiniela nueva.'}
           </Text>
           {isWeb && (
             <View style={styles.webNote}>

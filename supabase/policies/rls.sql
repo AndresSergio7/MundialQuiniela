@@ -24,9 +24,11 @@ CREATE POLICY "profiles_select_public" ON profiles FOR SELECT USING (true);
 -- ============================================================
 -- POOLS
 -- ============================================================
-CREATE POLICY "pools_select_member" ON pools FOR SELECT
+-- Admin puede ver sus quinielas aunque falte fila en pool_members (evita "limbo").
+CREATE POLICY "pools_select_member_or_owner" ON pools FOR SELECT
   USING (
-    id IN (SELECT pool_id FROM pool_members WHERE user_id = auth.uid())
+    admin_id = auth.uid()
+    OR id IN (SELECT pool_id FROM pool_members WHERE user_id = auth.uid())
   );
 
 CREATE POLICY "pools_insert_authenticated" ON pools FOR INSERT
@@ -94,6 +96,10 @@ CREATE POLICY "predictions_update_own_unlocked" ON predictions FOR UPDATE
   USING (
     user_id = auth.uid()
     AND is_locked = false
+    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+  )
+  WITH CHECK (
+    user_id = auth.uid()
     AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
   );
 

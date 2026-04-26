@@ -103,7 +103,8 @@ export default function RootLayout() {
     if (!isAuthReady) return;
     const inAuth = segments[0] === '(auth)';
     const inJoin = segments[0] === 'join';
-    if (!user && !inAuth && !inJoin) {
+    const onPasswordRecovery = segments.includes('reset-password');
+    if (!user && !inAuth && !inJoin && !onPasswordRecovery) {
       router.replace('/(auth)/login');
     } else if (user && inAuth) {
       router.replace('/(app)');
@@ -127,6 +128,7 @@ export default function RootLayout() {
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />
           <Stack.Screen name="join" />
+          <Stack.Screen name="reset-password" />
         </Stack>
       </>
     </QueryClientProvider>

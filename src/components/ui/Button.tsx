@@ -8,19 +8,44 @@ import {
   TextStyle,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadows } from './theme';
+
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'gold' | 'danger';
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'gold' | 'danger';
+  variant?: ButtonVariant;
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
   fullWidth?: boolean;
+  /** Icono React o nombre de glifo Ionicons (p. ej. `"log-in-outline"`). */
   icon?: React.ReactNode;
+}
+
+function iconColorForVariant(variant: ButtonVariant): string {
+  if (variant === 'outline' || variant === 'ghost') return colors.primary;
+  if (variant === 'gold') return colors.navy;
+  return '#fff';
+}
+
+function renderIcon(icon: React.ReactNode | undefined, variant: ButtonVariant): React.ReactNode {
+  if (icon == null || icon === false) return null;
+  if (typeof icon === 'string') {
+    const color = iconColorForVariant(variant);
+    return (
+      <Ionicons
+        name={icon as keyof typeof Ionicons.glyphMap}
+        size={20}
+        color={color}
+      />
+    );
+  }
+  return icon;
 }
 
 export function Button({
@@ -36,6 +61,7 @@ export function Button({
   icon,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  const resolvedIcon = renderIcon(icon, variant);
 
   const containerStyle: ViewStyle[] = [
     styles.base,
@@ -60,7 +86,7 @@ export function Button({
         />
       ) : (
         <View style={styles.inner}>
-          {icon && <View style={styles.iconWrap}>{icon}</View>}
+          {resolvedIcon ? <View style={styles.iconWrap}>{resolvedIcon}</View> : null}
           <Text style={[styles.text, (styles as any)[`${variant}Text`] as TextStyle, textStyle]}>
             {title}
           </Text>

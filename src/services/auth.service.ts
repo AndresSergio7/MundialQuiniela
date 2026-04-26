@@ -1,6 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import { AppError } from '@/lib/errors';
 
+/** URL absoluta permitida en Supabase (Auth → URL configuration → Redirect URLs). */
+export async function requestPasswordReset(email: string, redirectTo: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo,
+  });
+  if (error) throw new AppError('AUTH_RESET_EMAIL_FAILED', error.message);
+}
+
 interface SignUpMetadata {
   username?: string;
   fullName?: string;

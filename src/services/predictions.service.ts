@@ -4,6 +4,86 @@ import { fetchMatches } from '@/services/matches.service';
 import { validateQuiniela } from '@/lib/validation';
 import type { Prediction, PredictionMap, Submission } from '@/types';
 
+function isMissingSubmitQuinielaRpc(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('could not find the function public.submit_quiniela') ||
+    (normalized.includes('submit_quiniela') && normalized.includes('schema cache'))
+  );
+}
+
+async function submitQuinielaWithoutRpc(
+  poolId: string,
+  userId: string,
+  validation: { valid: boolean; errors: string[] },
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+
+  const { data: pool, error: poolError } = await supabase
+    .from('pools')
+    .select('id, prediction_deadline')
+    .eq('id', poolId)
+    .maybeSingle();
+  if (poolError) throw new AppError('SUBMIT_QUINIELA_FAILED', poolError.message);
+  if (!pool) throw new AppError('SUBMIT_QUINIELA_REJECTED', 'Pool not found.');
+
+  const deadline = new Date(pool.prediction_deadline).getTime();
+  if (!Number.isNaN(deadline) && deadline <= Date.now()) {
+    throw new AppError('SUBMIT_QUINIELA_REJECTED', 'Prediction deadline has passed.');
+  }
+
+  const { error: submissionError } = await supabase.from('submissions').upsert(
+    {
+      pool_id: poolId,
+      user_id: userId,
+      submitted_at: nowIso,
+      is_valid: validation.valid,
+      validation_errors: validation.errors,
+      locked_at: validation.valid ? nowIso : null,
+    },
+    { onConflict: 'pool_id,user_id' },
+  );
+  if (submissionError) throw new AppError('SUBMIT_QUINIELA_FAILED', submissionError.message);
+
+  if (validation.valid) {
+    const { error: lockError } = await supabase
+      .from('predictions')
+      .update({ is_locked: true })
+      .eq('pool_id', poolId)
+      .eq('user_id', userId);
+    if (lockError) throw new AppError('SUBMIT_QUINIELA_FAILED', lockError.message);
+  }
+
+  const { error: standingsError } = await supabase.from('standings').upsert(
+    {
+      pool_id: poolId,
+      user_id: userId,
+      total_points: 0,
+      exact_scores: 0,
+      correct_results: 0,
+      matches_played: 0,
+    },
+    { onConflict: 'pool_id,user_id' },
+  );
+  // In older environments standings INSERT may still be blocked by RLS.
+  // Submission must not fail because standings can be recalculated later.
+  if (standingsError) {
+    const msg = standingsError.message.toLowerCase();
+    const isRlsStandingsError =
+      msg.includes('row-level security') && msg.includes('standings');
+    if (!isRlsStandingsError) {
+      throw new AppError('SUBMIT_QUINIELA_FAILED', standingsError.message);
+    }
+  }
+
+  if (!validation.valid) {
+    throw new AppError(
+      'SUBMIT_QUINIELA_REJECTED',
+      validation.errors[0] ?? 'Validation failed.',
+    );
+  }
+}
+
 export async function fetchPredictions(poolId: string, userId: string): Promise<Prediction[]> {
   const { data, error } = await supabase
     .from('predictions')
@@ -69,7 +149,13 @@ export async function submitQuiniela(poolId: string, userId: string): Promise<vo
     p_is_valid: validation.valid,
     p_errors: validation.errors,
   });
-  if (error) throw new AppError('SUBMIT_QUINIELA_FAILED', error.message);
+  if (error) {
+    if (isMissingSubmitQuinielaRpc(error.message)) {
+      await submitQuinielaWithoutRpc(poolId, userId, validation);
+      return;
+    }
+    throw new AppError('SUBMIT_QUINIELA_FAILED', error.message);
+  }
 
   const result = data as { success?: boolean; error?: string | null } | null;
   if (!result?.success) {

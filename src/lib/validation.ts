@@ -78,39 +78,6 @@ export function validateQuiniela(
     );
   }
 
-  const scorelineMap = buildScorelineMap(predictions);
-  const scorelines = Object.values(scorelineMap);
-
-  // Rule 2: minimum distinct scorelines.
-  if (scorelines.length < cfg.minDistinctScorelines) {
-    errors.push(
-      `Solo ${scorelines.length} marcador(es) distintos. Mínimo ${cfg.minDistinctScorelines}.`,
-    );
-  }
-
-  // Rule 3: minimum scorelines used 2+ times.
-  const repeated = scorelines.filter((s) => s.count >= 2).length;
-  if (repeated < cfg.minRepeatedScorelines) {
-    errors.push(
-      `Solo ${repeated} marcador(es) repetidos. Mínimo ${cfg.minRepeatedScorelines}.`,
-    );
-  }
-
-  // Rule 4: no scoreline overused.
-  for (const s of scorelines) {
-    if (s.count > cfg.maxUsesPerScoreline) {
-      errors.push(
-        `El marcador ${s.home}-${s.away} se usó ${s.count} veces. Máximo ${cfg.maxUsesPerScoreline}.`,
-      );
-    }
-  }
-
-  // Rule 5: minimum draws.
-  const draws = countDraws(predictions);
-  if (draws < cfg.minDraws) {
-    errors.push(`Solo ${draws} empate(s). Mínimo ${cfg.minDraws}.`);
-  }
-
   return { valid: errors.length === 0, errors };
 }
 

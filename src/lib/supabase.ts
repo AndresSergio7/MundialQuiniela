@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const supabaseUrl: string =
   (Constants.expoConfig?.extra?.supabaseUrl as string) ||
@@ -22,6 +23,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // Web: leer sesión de recuperación desde el hash del enlace del correo.
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });

@@ -26,14 +26,12 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;');
 }
 
-function formatMatchDate(date: string) {
-  return new Date(date).toLocaleString('es-MX', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatMatchTime(dateString: string) {
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const month = date.toLocaleString('es-MX', { month: 'short' }).toUpperCase().replace('.', '');
+  const time = date.toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `<span class="date-day">${day} ${month}</span><br/><span class="date-time">${time}</span>`;
 }
 
 function renderFlagHtml(code: string, teamName: string) {
@@ -41,343 +39,235 @@ function renderFlagHtml(code: string, teamName: string) {
   if (flagUrl) {
     return `<img class="flag-img" src="${flagUrl}" alt="${escapeHtml(teamName)}" />`;
   }
-
   return `<span class="flag-fallback">${escapeHtml(getCountryFlagFallback(code))}</span>`;
 }
 
 export function buildPredictionsPdfHtml(options: BuildPredictionsPdfOptions) {
-  const rows = [...options.rows].sort(
-    (a, b) => new Date(a.match.match_date).getTime() - new Date(b.match.match_date).getTime(),
-  );
+  // Ordenar por Grupo y luego Fecha
+  const rows = [...options.rows].sort((a, b) => {
+    if (a.match.group_name !== b.match.group_name) {
+      return a.match.group_name.localeCompare(b.match.group_name);
+    }
+    return new Date(a.match.match_date).getTime() - new Date(b.match.match_date).getTime();
+  });
+  
   const splitIndex = Math.ceil(rows.length / 2);
   const leftRows = rows.slice(0, splitIndex);
   const rightRows = rows.slice(splitIndex);
+  
   const generatedLabel = options.generatedAt.toLocaleString('es-MX', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 
-  const userMeta = options.userLabel
-    ? `<span>Jugador: <strong>${escapeHtml(options.userLabel)}</strong></span>`
-    : '';
-
   function buildColumnRows(columnRows: PredictionPrintableRow[], offset: number) {
+    let currentGroup = '';
     return columnRows
-      .map(
-        ({ match, homeScore, awayScore }, index) => `
-      <tr>
-        <td class="idx">${offset + index + 1}</td>
-        <td class="grp">${escapeHtml(match.group_name)}</td>
-        <td class="team">${renderFlagHtml(match.home_team_code, match.home_team)} ${escapeHtml(match.home_team)}</td>
-        <td class="score">${homeScore}-${awayScore}</td>
-        <td class="team team-away">${escapeHtml(match.away_team)} ${renderFlagHtml(match.away_team_code, match.away_team)}</td>
-      </tr>
-    `,
-      )
+      .map(({ match, homeScore, awayScore }, index) => {
+        let groupHeader = '';
+        if (match.group_name !== currentGroup) {
+          currentGroup = match.group_name;
+          groupHeader = `
+            <tr class="group-header-row">
+              <td colspan="5">GRUPO ${escapeHtml(currentGroup)}</td>
+            </tr>
+          `;
+        }
+        
+        return `
+          ${groupHeader}
+          <tr>
+            <td class="col-idx">${offset + index + 1}</td>
+            <td class="col-date">${formatMatchTime(match.match_date)}</td>
+            <td class="team-cell team-home">
+              <span class="team-name">${escapeHtml(match.home_team)}</span>
+              ${renderFlagHtml(match.home_team_code, match.home_team)}
+            </td>
+            <td class="col-score"><span class="score-badge">${homeScore}-${awayScore}</span></td>
+            <td class="team-cell team-away">
+              ${renderFlagHtml(match.away_team_code, match.away_team)}
+              <span class="team-name">${escapeHtml(match.away_team)}</span>
+            </td>
+          </tr>
+        `;
+      })
       .join('');
   }
-
-  const leftTableRowsHtml = buildColumnRows(leftRows, 0);
-  const rightTableRowsHtml = buildColumnRows(rightRows, splitIndex);
 
   return `
     <!doctype html>
     <html lang="es">
       <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Quiniela Oficial - ${escapeHtml(options.poolName)}</title>
+        <title>Quiniela - ${escapeHtml(options.poolName)}</title>
         <style>
           :root {
-            --ink: #102046;
-            --ink-soft: #4b5678;
-            --paper: #ffffff;
-            --line: #d7deee;
-            --head: #0f2558;
-            --head-soft: #eef3ff;
-            --score-bg: #112a63;
-            --accent: #0b8c7a;
-            --accent-soft: #e8faf6;
+            --primary: #0A6B35;
+            --primary-dark: #084D26;
+            --accent: #C9A84C;
+            --navy: #0D1B2A;
+            --border: #D9E3EE;
+            --text: #0D1B2A;
+            --text-muted: #556B82;
           }
 
-          @page { size: A4 portrait; margin: 6mm; }
+          @page { size: A4 portrait; margin: 4mm; }
 
           * { box-sizing: border-box; }
-          html, body { width: 100%; }
           body {
-            margin: 0;
-            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-            color: var(--ink);
-            background: var(--paper);
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            color: var(--text);
+            margin: 0; padding: 0;
+            background: #fff;
+            -webkit-print-color-adjust: exact;
           }
 
-          .sheet {
-            width: 100%;
-            max-width: 100%;
-            margin: 0 auto;
-            border: 1px solid #c7d3ee;
-            border-radius: 10px;
-            padding: 8px;
-            background:
-              linear-gradient(145deg, #ffffff 0%, #fbfdff 100%);
-          }
+          .container { width: 100%; }
 
+          /* --- HEADER --- */
           .hero {
-            border: 1px solid #b8c8ea;
-            border-radius: 10px;
-            padding: 8px 10px;
-            background:
-              linear-gradient(135deg, rgba(15, 37, 88, 0.98), rgba(35, 91, 164, 0.96));
-            color: var(--head);
-          }
-
-          .hero h1 {
-            margin: 0;
-            font-size: 16px;
-            letter-spacing: 0.2px;
-            color: #ffffff;
-          }
-
-          .hero p {
-            margin: 3px 0 0;
-            color: #dbe8ff;
-            font-size: 10px;
-          }
-
-          .hero-meta {
+            background-color: var(--primary-dark);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: white;
+            border-bottom: 3px solid var(--accent);
+            margin-bottom: 8px;
             display: flex;
-            flex-wrap: wrap;
-            gap: 5px 10px;
-            margin-top: 6px;
-            font-size: 9px;
-            color: #e6eeff;
+            justify-content: space-between;
+            align-items: center;
           }
 
-          .columns {
-            margin-top: 8px;
-            display: table;
-            width: 100%;
-            table-layout: fixed;
-            border-spacing: 6px 0;
-          }
+          .hero h1 { margin: 0; font-size: 14px; font-weight: 900; text-transform: uppercase; color: var(--accent); }
+          .hero h2 { margin: 0; font-size: 11px; font-weight: 700; color: #fff; }
+          .hero-meta { display: flex; gap: 10px; font-size: 8px; }
+          .meta-item { text-align: right; }
+          .meta-label { font-weight: 800; color: var(--accent); text-transform: uppercase; display: block; }
+          .meta-value { font-weight: 700; color: #fff; }
 
-          .column {
-            display: table-cell;
-            vertical-align: top;
-            width: 50%;
-          }
-
-          .column-title {
-            font-size: 8px;
-            letter-spacing: 0.6px;
-            text-transform: uppercase;
-            background: var(--accent-soft);
-            color: #0b6b5f;
-            border: 1px solid #bde6dd;
-            border-bottom: 0;
-            border-radius: 7px 7px 0 0;
-            padding: 4px 6px;
-            font-weight: 800;
-          }
+          /* --- COLUMNS --- */
+          .columns { display: flex; gap: 6px; }
+          .column { flex: 1; }
 
           .sheet-table {
             width: 100%;
-            border: 1px solid var(--line);
-            border-top: 0;
             border-collapse: collapse;
+            border: 1px solid var(--border);
             table-layout: fixed;
-            border-radius: 0 0 7px 7px;
-            overflow: hidden;
           }
 
-          .sheet-table th {
-            background: #f8faff;
-            color: var(--ink-soft);
-            font-size: 8px;
+          /* --- GROUP SUB-HEADER --- */
+          .group-header-row td {
+            background: var(--navy) !important;
+            color: var(--accent) !important;
+            font-size: 7.5px !important;
+            font-weight: 900 !important;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
-            padding: 4px 3px;
+            padding: 2px 6px !important;
+            letter-spacing: 0.5px;
             text-align: left;
-            border-bottom: 1px solid var(--line);
-          }
-
-          .sheet-table thead th {
-            background: #f5f8ff;
+            border: 0 !important;
           }
 
           .sheet-table td {
-            border-bottom: 1px solid var(--line);
-            padding: 2px 3px;
+            padding: 1px 2px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 8px;
             vertical-align: middle;
-            font-size: 9px;
-            line-height: 1.1;
+            height: 17px;
           }
 
-          .sheet-table tr:last-child td {
-            border-bottom: 0;
-          }
+          .sheet-table tr:nth-child(even):not(.group-header-row) { background-color: #fafbfc; }
 
-          .idx {
-            text-align: center;
-            width: 6%;
-            color: var(--ink-soft);
-          }
+          .col-idx { width: 14px; color: var(--text-muted); font-size: 6.5px; text-align: center; }
+          .col-date { width: 32px; text-align: center; color: var(--text-muted); line-height: 1; }
+          .date-day { font-size: 6px; font-weight: 800; text-transform: uppercase; }
+          .date-time { font-size: 7.5px; font-weight: 600; color: var(--text); }
+          .col-score { width: 34px; text-align: center; }
 
-          .grp {
-            text-align: center;
-            width: 9%;
-            color: #1a6b61;
+          .team-cell {
+            display: flex;
+            align-items: center;
+            gap: 2.5px;
             font-weight: 700;
-          }
-
-          .team {
-            font-weight: 700;
-            width: 36%;
             white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis;
           }
+          .team-home { justify-content: flex-end; text-align: right; }
+          .team-away { justify-content: flex-start; text-align: left; }
 
-          .flag-img {
-            width: 12px;
-            height: 8px;
-            border-radius: 1px;
-            border: 0.4px solid #cfdaf1;
-            vertical-align: baseline;
-            margin-right: 3px;
-            margin-left: 3px;
-          }
+          .team-name { overflow: hidden; text-overflow: ellipsis; max-width: 65px; }
 
-          .flag-fallback {
-            margin-right: 3px;
-            margin-left: 3px;
-          }
-
-          .team-away {
-            text-align: right;
-          }
-
-          .score {
-            text-align: center;
-            width: 13%;
-            font-size: 9px;
-            font-weight: 800;
+          .score-badge {
+            display: inline-block;
+            background: var(--navy);
             color: #fff;
-            background: linear-gradient(135deg, var(--score-bg), #173d87);
-            border-radius: 999px;
-            letter-spacing: 0.4px;
-            padding: 2px 0;
-            white-space: nowrap;
+            font-weight: 900;
+            padding: 1px 3px;
+            border-radius: 2px;
+            min-width: 28px;
+            font-size: 8px;
           }
+
+          .flag-img { width: 11px; height: 7.5px; border-radius: 1px; border: 0.2px solid var(--border); }
 
           .footer {
-            margin-top: 8px;
-            display: block;
-            font-size: 8px;
-            color: #6e7894;
-            text-align: left;
+            margin-top: 4px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 7px;
+            color: var(--text-muted);
+            padding-top: 2px;
           }
 
           @media print {
-            html, body {
-              background: #fff !important;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-
-            .sheet {
-              border-color: #b9c9ea;
-              border-radius: 8px;
-              background: #fff;
-            }
-
-            .hero {
-              background: #173d87 !important;
-              border-color: #173d87;
-            }
-
-            .hero h1,
-            .hero p,
-            .hero-meta {
-              color: #ffffff !important;
-            }
-
-            .column-title {
-              background: #e8faf6 !important;
-              color: #0b6b5f !important;
-              border-color: #bde6dd;
-            }
-
-            .score {
-              background: #173d87 !important;
-              color: #fff !important;
-              border: 1px solid #173d87;
-            }
-
-            .sheet-table th {
-              background: #f3f7ff !important;
-              color: #314264 !important;
-            }
+            .hero { background-color: #084D26 !important; }
+            .group-header-row td { background-color: #0D1B2A !important; }
+            .score-badge { background-color: #0D1B2A !important; }
           }
         </style>
       </head>
       <body>
-        <main class="sheet">
+        <div class="container">
           <header class="hero">
-            <h1>Quiniela Oficial</h1>
-            <p>${escapeHtml(options.poolName)}</p>
+            <div>
+              <h1>Mundial Quiniela 2026</h1>
+              <h2>${escapeHtml(options.poolName)}</h2>
+            </div>
             <div class="hero-meta">
-              <span>Partidos: <strong>${options.rows.length}</strong></span>
-              ${userMeta}
-              <span>Generado: <strong>${escapeHtml(generatedLabel)}</strong></span>
+              <div class="meta-item">
+                <span class="meta-label">Jugador</span>
+                <span class="meta-value">${escapeHtml(options.userLabel || 'Invitado')}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Emitido</span>
+                <span class="meta-value">${escapeHtml(generatedLabel)}</span>
+              </div>
             </div>
           </header>
 
           <div class="columns">
-            <section class="column">
-              <div class="column-title">Columna 1</div>
-              <table class="sheet-table" cellspacing="0" cellpadding="0">
-                <thead>
-                  <tr>
-                    <th style="width: 6%; text-align:center;">#</th>
-                    <th style="width: 9%; text-align:center;">G</th>
-                    <th style="width: 36%;">Local</th>
-                    <th style="width: 13%; text-align:center;">Score</th>
-                    <th style="width: 36%; text-align:right;">Visitante</th>
-                  </tr>
-                </thead>
+            <div class="column">
+              <table class="sheet-table">
                 <tbody>
-                  ${leftTableRowsHtml}
+                  ${buildColumnRows(leftRows, 0)}
                 </tbody>
               </table>
-            </section>
+            </div>
 
-            <section class="column">
-              <div class="column-title">Columna 2</div>
-              <table class="sheet-table" cellspacing="0" cellpadding="0">
-                <thead>
-                  <tr>
-                    <th style="width: 6%; text-align:center;">#</th>
-                    <th style="width: 9%; text-align:center;">G</th>
-                    <th style="width: 36%;">Local</th>
-                    <th style="width: 13%; text-align:center;">Score</th>
-                    <th style="width: 36%; text-align:right;">Visitante</th>
-                  </tr>
-                </thead>
+            <div class="column">
+              <table class="sheet-table">
                 <tbody>
-                  ${rightTableRowsHtml}
+                  ${buildColumnRows(rightRows, splitIndex)}
                 </tbody>
               </table>
-            </section>
+            </div>
           </div>
 
-          <div class="footer">
-            <span>Mundial Quiniela</span>
-          </div>
-        </main>
+          <footer class="footer">
+            <span>Official FIFA World Cup 2026 Edition — Digital Receipt</span>
+            <span>${options.rows.length} pronósticos registrados</span>
+          </footer>
+        </div>
       </body>
     </html>
   `;

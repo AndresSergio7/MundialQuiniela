@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,11 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { generateInviteLink } from '@/services/invites.service';
-import { getPoolMembers, removeMember } from '@/services/pools.service';
+import { fetchPoolById, getPoolMembers, listMyPools, removeMember } from '@/services/pools.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
@@ -24,7 +24,7 @@ import type { PoolMember, Pool } from '@/types';
 export default function InvitesScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { currentPool, pools, setCurrentPool } = usePoolStore();
+  const { currentPool, pools, setCurrentPool, setPools } = usePoolStore();
 
   const [members, setMembers] = useState<PoolMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +60,44 @@ export default function InvitesScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPool?.id]);
 
+  // Al volver desde Comprar / Inicio el store puede tener max_members viejo; mismo id no dispara el effect de arriba.
+  useFocusEffect(
+    useCallback(() => {
+      const uid = user?.id;
+      if (!uid) return;
+      const userId = uid;
+      let cancelled = false;
+
+      async function syncPoolFromServer() {
+        const pool = usePoolStore.getState().currentPool;
+        if (!pool) {
+          setError(null);
+          return;
+        }
+        setError(null);
+        setShareSuccess(false);
+        try {
+          const fresh = await fetchPoolById(pool.id);
+          if (cancelled) return;
+          setCurrentPool(fresh);
+          const nextPools = await listMyPools(userId);
+          if (cancelled) return;
+          setPools(nextPools);
+          const m = await getPoolMembers(fresh.id);
+          if (cancelled) return;
+          setMembers(m);
+        } catch {
+          // lectura fallida: mantener UI actual
+        }
+      }
+
+      void syncPoolFromServer();
+      return () => {
+        cancelled = true;
+      };
+    }, [user?.id, setCurrentPool, setPools]),
+  );
+
   async function handleShare() {
     if (!user || !currentPool) return;
     setSharing(true);
@@ -72,7 +110,7 @@ export default function InvitesScreen() {
     if (linkError || !link) {
       if (linkError === 'PURCHASE_REQUIRED') {
         setError('Para invitar participantes primero necesitas comprar un plan.');
-        router.push('/(app)/purchase');
+        router.push(`/(app)/purchase?upgradePoolId=${encodeURIComponent(currentPool.id)}`);
         return;
       }
       setError(linkError ?? 'No se pudo generar el link de invitación.');

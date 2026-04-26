@@ -84,18 +84,22 @@ export function buildInviteLink(poolId: string, token: string): string {
   return `${INVITE_WEB_BASE}/join?pool=${poolId}&token=${token}`;
 }
 
-export async function generateInviteLink(
+/**
+ * Vincula la compra (entitlement global sin pool) a esta quiniela y sube `max_members`,
+ * o solo sincroniza cupo si ya había entitlement ligado. Usado al invitar y tras comprar plan.
+ */
+export async function applyUnusedEntitlementToPool(
   adminId: string,
   poolId: string,
-): Promise<{ link: string | null; error: string | null }> {
+): Promise<{ error: string | null }> {
   const { data: pool, error } = await supabase
     .from('pools')
-    .select('admin_id, invite_token, max_members')
+    .select('admin_id, max_members')
     .eq('id', poolId)
     .maybeSingle();
-  if (error) return { link: null, error: error.message };
-  if (!pool) return { link: null, error: 'Pool not found.' };
-  if (pool.admin_id !== adminId) return { link: null, error: 'Only the pool admin can share invites.' };
+  if (error) return { error: error.message };
+  if (!pool) return { error: 'Pool not found.' };
+  if (pool.admin_id !== adminId) return { error: 'Only the pool admin can upgrade this pool.' };
 
   const { data: linkedEntitlement, error: linkedEntitlementError } = await supabase
     .from('entitlements')
@@ -105,7 +109,7 @@ export async function generateInviteLink(
     .eq('has_app_access', true)
     .maybeSingle();
 
-  if (linkedEntitlementError) return { link: null, error: linkedEntitlementError.message };
+  if (linkedEntitlementError) return { error: linkedEntitlementError.message };
 
   if (linkedEntitlement && pool.max_members < linkedEntitlement.base_slots) {
     const { error: syncPoolCapacityError } = await supabase
@@ -115,72 +119,105 @@ export async function generateInviteLink(
         updated_at: new Date().toISOString(),
       })
       .eq('id', poolId);
-    if (syncPoolCapacityError) return { link: null, error: syncPoolCapacityError.message };
+    if (syncPoolCapacityError) return { error: syncPoolCapacityError.message };
   }
 
-  if (!linkedEntitlement && pool.max_members <= 1) {
-    let { data: unusedEntitlement, error: unusedEntitlementError } = await supabase
-      .from('entitlements')
-      .select('id, base_slots')
+  if (linkedEntitlement) {
+    return { error: null };
+  }
+
+  if (pool.max_members > 1) {
+    return { error: null };
+  }
+
+  let { data: unusedEntitlement, error: unusedEntitlementError } = await supabase
+    .from('entitlements')
+    .select('id, base_slots')
+    .eq('user_id', adminId)
+    .is('pool_id', null)
+    .eq('has_app_access', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (unusedEntitlementError) return { error: unusedEntitlementError.message };
+
+  if (!unusedEntitlement) {
+    const { data: verifiedPayments, error: verifiedPaymentsError } = await supabase
+      .from('payments')
+      .select('id')
       .eq('user_id', adminId)
-      .is('pool_id', null)
-      .eq('has_app_access', true)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .eq('status', 'verified')
+      .eq('payment_type', 'app_access')
+      .order('created_at', { ascending: true });
 
-    if (unusedEntitlementError) return { link: null, error: unusedEntitlementError.message };
+    if (verifiedPaymentsError) return { error: verifiedPaymentsError.message };
 
-    // Recovery path for simulated purchases: if verified payments exist but
-    // entitlements were not materialized yet, hydrate them before failing.
-    if (!unusedEntitlement) {
-      const { data: verifiedPayments, error: verifiedPaymentsError } = await supabase
-        .from('payments')
-        .select('id')
+    if ((verifiedPayments ?? []).length > 0) {
+      await Promise.all(
+        (verifiedPayments ?? []).map((payment) =>
+          supabase.rpc('grant_entitlement_from_payment', { p_payment_id: payment.id }),
+        ),
+      );
+
+      const retry = await supabase
+        .from('entitlements')
+        .select('id, base_slots')
         .eq('user_id', adminId)
-        .eq('status', 'verified')
-        .eq('payment_type', 'app_access')
-        .order('created_at', { ascending: true });
+        .is('pool_id', null)
+        .eq('has_app_access', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-      if (verifiedPaymentsError) return { link: null, error: verifiedPaymentsError.message };
-
-      if ((verifiedPayments ?? []).length > 0) {
-        await Promise.all(
-          (verifiedPayments ?? []).map((payment) =>
-            supabase.rpc('grant_entitlement_from_payment', { p_payment_id: payment.id }),
-          ),
-        );
-
-        const retry = await supabase
-          .from('entitlements')
-          .select('id, base_slots')
-          .eq('user_id', adminId)
-          .is('pool_id', null)
-          .eq('has_app_access', true)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        unusedEntitlement = retry.data;
-        unusedEntitlementError = retry.error;
-      }
+      unusedEntitlement = retry.data;
+      unusedEntitlementError = retry.error;
     }
-
-    if (unusedEntitlementError) return { link: null, error: unusedEntitlementError.message };
-    if (!unusedEntitlement) return { link: null, error: 'PURCHASE_REQUIRED' };
-
-    const { error: entitlementUpdateError } = await supabase
-      .from('entitlements')
-      .update({ pool_id: poolId, updated_at: new Date().toISOString() })
-      .eq('id', unusedEntitlement.id);
-    if (entitlementUpdateError) return { link: null, error: entitlementUpdateError.message };
-
-    const { error: poolUpdateError } = await supabase
-      .from('pools')
-      .update({ max_members: unusedEntitlement.base_slots, updated_at: new Date().toISOString() })
-      .eq('id', poolId);
-    if (poolUpdateError) return { link: null, error: poolUpdateError.message };
   }
+
+  if (unusedEntitlementError) return { error: unusedEntitlementError.message };
+  if (!unusedEntitlement) return { error: 'PURCHASE_REQUIRED' };
+
+  const { error: entitlementUpdateError } = await supabase
+    .from('entitlements')
+    .update({ pool_id: poolId, updated_at: new Date().toISOString() })
+    .eq('id', unusedEntitlement.id);
+  if (entitlementUpdateError) return { error: entitlementUpdateError.message };
+
+  const { error: poolUpdateError } = await supabase
+    .from('pools')
+    .update({ max_members: unusedEntitlement.base_slots, updated_at: new Date().toISOString() })
+    .eq('id', poolId);
+  if (poolUpdateError) return { error: poolUpdateError.message };
+
+  return { error: null };
+}
+
+/** Si el usuario es admin de una sola quiniela "solo" (max 1), es el candidato a upgrade tras comprar. */
+export async function getSingleSoloAdminPoolId(adminId: string): Promise<string | undefined> {
+  const { data, error } = await supabase
+    .from('pools')
+    .select('id')
+    .eq('admin_id', adminId)
+    .lte('max_members', 1);
+  if (error || !data || data.length !== 1) return undefined;
+  return data[0].id;
+}
+
+export async function generateInviteLink(
+  adminId: string,
+  poolId: string,
+): Promise<{ link: string | null; error: string | null }> {
+  const { error: applyError } = await applyUnusedEntitlementToPool(adminId, poolId);
+  if (applyError) return { link: null, error: applyError };
+
+  const { data: pool, error } = await supabase
+    .from('pools')
+    .select('invite_token')
+    .eq('id', poolId)
+    .maybeSingle();
+  if (error) return { link: null, error: error.message };
+  if (!pool) return { link: null, error: 'Pool not found.' };
 
   return { link: buildInviteLink(poolId, pool.invite_token), error: null };
 }

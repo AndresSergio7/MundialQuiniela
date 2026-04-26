@@ -150,6 +150,36 @@ export default function HomeScreen() {
   const totalPools = pools.length;
   const submittedPools = Object.values(submissions).filter((s) => s?.is_valid).length;
   const finalPools = Object.values(submissions).filter((s) => s?.is_final).length;
+  const selectedPool = currentPool ?? pools[0] ?? null;
+  const selectedSubmission = selectedPool ? submissions[selectedPool.id] : null;
+  const selectedErrors = selectedSubmission?.validation_errors ?? [];
+  const selectedHasErrors = selectedErrors.length > 0;
+  const selectedIsFinal = selectedSubmission?.is_final === true;
+  const selectedIsValid = selectedSubmission?.is_valid === true;
+  const selectedDeadlineLeftDays = selectedPool
+    ? Math.ceil((new Date(selectedPool.prediction_deadline).getTime() - Date.now()) / 86400000)
+    : null;
+
+  let nextActionTitle = 'Tu próxima jugada';
+  let nextActionSubtitle = 'Selecciona una quiniela para continuar.';
+  let nextActionButton = 'Seleccionar quiniela';
+
+  if (selectedPool) {
+    nextActionSubtitle = `Quiniela activa: ${selectedPool.name}`;
+    if (selectedIsFinal) {
+      nextActionTitle = 'Quiniela enviada';
+      nextActionButton = 'Ver quiniela enviada';
+    } else if (selectedHasErrors) {
+      nextActionTitle = 'Corrige tu quiniela';
+      nextActionButton = 'Corregir ahora';
+    } else if (selectedIsValid) {
+      nextActionTitle = 'Lista para enviar';
+      nextActionButton = 'Revisar y enviar';
+    } else {
+      nextActionTitle = 'Completa tu quiniela';
+      nextActionButton = 'Continuar captura';
+    }
+  }
 
   return (
     <ScrollView
@@ -207,32 +237,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      <View style={[styles.quickDeck, !hasAccess && styles.quickDeckWithBanner]}>
-        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/predictions')}>
-          <View style={[styles.quickIconWrap, { backgroundColor: '#EAF6EE' }]}>
-            <Ionicons name="football-outline" size={18} color={colors.primary} />
-          </View>
-          <Text style={styles.quickTitle}>Quiniela</Text>
-          <Text style={styles.quickSub}>Captura tus marcadores</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/live')}>
-          <View style={[styles.quickIconWrap, { backgroundColor: '#FDECEC' }]}>
-            <Ionicons name="radio-outline" size={18} color={colors.error} />
-          </View>
-          <Text style={styles.quickTitle}>En Vivo</Text>
-          <Text style={styles.quickSub}>Minuto a minuto mock</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/(app)/standings')}>
-          <View style={[styles.quickIconWrap, { backgroundColor: '#FFF5D7' }]}>
-            <Ionicons name="podium-outline" size={18} color={colors.accent} />
-          </View>
-          <Text style={styles.quickTitle}>Tabla</Text>
-          <Text style={styles.quickSub}>Revisa posiciones</Text>
-        </TouchableOpacity>
-      </View>
-
       {/* ── My Pools ── */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
@@ -281,24 +285,65 @@ export default function HomeScreen() {
                 activeOpacity={0.88}
               >
                 <View style={[styles.poolCard, isFinal && styles.poolCardFinal]}>
-                  {/* left accent stripe */}
-                  <View style={[styles.poolStripe, isFinal ? styles.poolStripeGold : styles.poolStripeGreen]} />
-
+                  <View style={styles.poolGlowA} />
+                  <View style={styles.poolGlowB} />
                   <View style={styles.poolCardContent}>
-                    <View style={styles.poolRow}>
-                      <View style={styles.poolInfo}>
-                        <Text style={styles.poolName}>{pool.name}</Text>
-                        <Text style={styles.poolMeta}>
-                          {isPoolAdmin ? '👑 Admin' : '👤 Miembro'} · {pool.max_members} participantes
-                        </Text>
+                    <View style={styles.poolTopRow}>
+                      <View style={styles.poolLeadWrap}>
+                        <View
+                          style={[
+                            styles.poolCrest,
+                            isFinal ? styles.poolCrestFinal : styles.poolCrestOpen,
+                          ]}
+                        >
+                          <Ionicons
+                            name={isFinal ? 'shield-checkmark-outline' : 'football-outline'}
+                            size={18}
+                            color={isFinal ? colors.navy : colors.primary}
+                          />
+                        </View>
+
+                        <View style={styles.poolInfo}>
+                          <Text numberOfLines={1} style={styles.poolName}>{pool.name}</Text>
+
+                          <View style={styles.poolTagRow}>
+                            <View
+                              style={[
+                                styles.rolePill,
+                                isPoolAdmin ? styles.rolePillAdmin : styles.rolePillMember,
+                              ]}
+                            >
+                              <Ionicons
+                                name={isPoolAdmin ? 'crown-outline' : 'person-outline'}
+                                size={12}
+                                color={isPoolAdmin ? colors.accent : colors.primary}
+                              />
+                              <Text
+                                style={[
+                                  styles.rolePillText,
+                                  isPoolAdmin ? styles.rolePillTextAdmin : styles.rolePillTextMember,
+                                ]}
+                              >
+                                {isPoolAdmin ? 'Admin' : 'Miembro'}
+                              </Text>
+                            </View>
+
+                            <View style={styles.poolSizePill}>
+                              <Ionicons name="people-outline" size={12} color={colors.textMuted} />
+                              <Text style={styles.poolSizeText}>{pool.max_members} cupos</Text>
+                            </View>
+                          </View>
+                        </View>
                       </View>
-                      <View style={styles.poolActions}>
+
+                      <View style={styles.poolTopActions}>
                         <View style={[styles.badge, badgeStyle]}>
                           <Text style={styles.badgeText}>{badgeLabel}</Text>
                         </View>
+
                         <TouchableOpacity
                           onPress={(e) => { e.stopPropagation(); handleTrashPress(pool); }}
-                          style={styles.trashBtn}
+                          style={styles.poolDangerBtn}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
                           <Ionicons
@@ -309,6 +354,15 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                       </View>
                     </View>
+
+                    <View style={styles.poolBottomRow}>
+                      <Text style={styles.poolHintText}>Entrar y editar marcadores</Text>
+                      <View style={styles.poolEnterCta}>
+                        <Text style={styles.poolEnterText}>Abrir</Text>
+                        <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+
                     {sub && sub.validation_errors?.length > 0 && (
                       <Text style={styles.validationError}>⚠ {sub.validation_errors[0]}</Text>
                     )}
@@ -318,6 +372,63 @@ export default function HomeScreen() {
             );
           })
         )}
+      </View>
+
+      {/* ── Context card (no redundant nav) ── */}
+      <View style={styles.contextWrap}>
+        <View style={styles.contextCard}>
+          <View style={styles.contextTopRow}>
+            <View>
+              <Text style={styles.contextKicker}>Siguiente paso</Text>
+              <Text style={styles.contextTitle}>{nextActionTitle}</Text>
+              <Text style={styles.contextSubtitle}>{nextActionSubtitle}</Text>
+            </View>
+
+            <View style={styles.contextMetrics}>
+              <Text style={styles.contextMetricValue}>{submittedPools}/{Math.max(totalPools, 1)}</Text>
+              <Text style={styles.contextMetricLabel}>quinielas listas</Text>
+            </View>
+          </View>
+
+          {selectedPool && (
+            <View style={styles.contextStatusRow}>
+              <View
+                style={[
+                  styles.contextStatusPill,
+                  selectedIsFinal
+                    ? styles.contextStatusFinal
+                    : selectedIsValid
+                    ? styles.contextStatusValid
+                    : styles.contextStatusPending,
+                ]}
+              >
+                <Text style={styles.contextStatusText}>
+                  {selectedIsFinal
+                    ? 'Enviada'
+                    : selectedIsValid
+                    ? 'Lista'
+                    : selectedHasErrors
+                    ? 'Con errores'
+                    : 'Pendiente'}
+                </Text>
+              </View>
+
+              <Text style={styles.contextDeadlineText}>
+                {selectedDeadlineLeftDays !== null
+                  ? selectedDeadlineLeftDays > 0
+                    ? `Cierra en ${selectedDeadlineLeftDays} días`
+                    : 'La quiniela ya cerró'
+                  : ''}
+              </Text>
+            </View>
+          )}
+
+          <Button
+            title={nextActionButton}
+            onPress={() => router.push('/(app)/predictions')}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
       </View>
 
       {/* ── Confirm delete / leave ── */}
@@ -465,27 +576,28 @@ const styles = StyleSheet.create({
   },
   heroStatsRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   heroStatChip: {
     flex: 1,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingVertical: spacing.xs + 2,
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.11)',
+    paddingVertical: spacing.sm,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   heroStatValue: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
     color: '#fff',
   },
   heroStatLabel: {
     fontSize: 10,
-    color: '#C8D8EB',
+    color: '#D9E6F5',
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.6,
   },
   heroGreeting: {
     flexDirection: 'row',
@@ -519,42 +631,97 @@ const styles = StyleSheet.create({
     color: colors.navy,
   },
 
-  quickDeck: {
-    marginTop: -spacing.lg,
+  contextWrap: {
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  quickDeckWithBanner: {
-    marginTop: spacing.md,
-  },
-  quickCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+  contextCard: {
+    backgroundColor: '#F3F8F5',
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: '#D6E1EE',
-    padding: spacing.sm,
+    borderColor: '#CFE2D6',
+    padding: spacing.md,
     ...shadows.md,
   },
-  quickIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
+  contextTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
-  quickTitle: {
-    fontSize: 13,
+  contextKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  contextTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 2,
+  },
+  contextSubtitle: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  contextMetrics: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#C6D9CD',
+    backgroundColor: '#EAF4EE',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  contextMetricValue: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: colors.primaryDark,
+  },
+  contextMetricLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  contextStatusRow: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  contextStatusPill: {
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+  },
+  contextStatusPending: {
+    backgroundColor: '#EFF3F8',
+    borderColor: '#CBD7E4',
+  },
+  contextStatusValid: {
+    backgroundColor: '#EAF6EE',
+    borderColor: 'rgba(10,107,53,0.35)',
+  },
+  contextStatusFinal: {
+    backgroundColor: '#FFF5D7',
+    borderColor: 'rgba(201,168,76,0.45)',
+  },
+  contextStatusText: {
+    fontSize: 11,
     fontWeight: '800',
     color: colors.text,
   },
-  quickSub: {
+  contextDeadlineText: {
     fontSize: 11,
     color: colors.textMuted,
-    marginTop: 2,
+    fontWeight: '700',
   },
 
   // Section
@@ -623,28 +790,92 @@ const styles = StyleSheet.create({
 
   // Pool card
   poolCard: {
-    flexDirection: 'row',
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    marginBottom: spacing.sm,
+    borderRadius: radius.xl,
+    marginBottom: spacing.md,
     overflow: 'hidden',
-    ...shadows.md,
+    borderWidth: 1,
+    borderColor: '#D4E1EE',
+    ...shadows.lg,
+    position: 'relative',
   },
   poolCardFinal: {
-    backgroundColor: '#FFFDF5',
+    backgroundColor: '#FFFDF8',
   },
-  poolStripe: {
-    width: 4,
-    backgroundColor: colors.primary,
+  poolGlowA: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(10,107,53,0.07)',
+    top: -95,
+    right: -55,
   },
-  poolStripeGold: { backgroundColor: colors.accent },
-  poolStripeGreen: { backgroundColor: colors.primary },
-  poolCardContent: { flex: 1, padding: spacing.md },
-  poolRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  poolInfo: { flex: 1, marginRight: spacing.sm },
-  poolName: { fontSize: 16, fontWeight: '800', color: colors.text },
-  poolMeta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
-  poolActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  poolGlowB: {
+    position: 'absolute',
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: 'rgba(201,168,76,0.14)',
+    bottom: -62,
+    left: -38,
+  },
+  poolCardContent: { padding: spacing.md, gap: spacing.sm },
+  poolTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  poolLeadWrap: { flexDirection: 'row', flex: 1, marginRight: spacing.sm },
+  poolCrest: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    borderWidth: 1,
+  },
+  poolCrestOpen: {
+    backgroundColor: '#EAF6EE',
+    borderColor: 'rgba(10,107,53,0.24)',
+  },
+  poolCrestFinal: {
+    backgroundColor: '#FFF4CC',
+    borderColor: 'rgba(201,168,76,0.45)',
+  },
+  poolInfo: { flex: 1 },
+  poolName: { fontSize: 16, fontWeight: '900', color: colors.text },
+  poolTagRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
+  rolePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  rolePillAdmin: {
+    backgroundColor: 'rgba(201,168,76,0.16)',
+    borderColor: 'rgba(201,168,76,0.45)',
+  },
+  rolePillMember: {
+    backgroundColor: '#EAF6EE',
+    borderColor: 'rgba(10,107,53,0.24)',
+  },
+  rolePillText: { fontSize: 11, fontWeight: '800' },
+  rolePillTextAdmin: { color: '#7A5A00' },
+  rolePillTextMember: { color: colors.primary },
+  poolSizePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  poolSizeText: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  poolTopActions: { alignItems: 'flex-end', gap: spacing.xs },
   badge: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -654,8 +885,47 @@ const styles = StyleSheet.create({
   badgeGreen: { backgroundColor: colors.successLight, borderWidth: 1, borderColor: colors.primary + '40' },
   badgeGray:  { backgroundColor: colors.borderLight, borderWidth: 1, borderColor: colors.border },
   badgeText: { fontSize: 11, fontWeight: '700', color: colors.text },
-  trashBtn: { padding: 4 },
-  validationError: { fontSize: 11, color: colors.error, marginTop: spacing.xs },
+  poolDangerBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  poolBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#E6EDF5',
+    paddingTop: spacing.sm,
+  },
+  poolHintText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  poolEnterCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#EAF6EE',
+    borderWidth: 1,
+    borderColor: 'rgba(10,107,53,0.24)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+  },
+  poolEnterText: { fontSize: 11, fontWeight: '800', color: colors.primary },
+  validationError: {
+    fontSize: 11,
+    color: colors.error,
+    backgroundColor: colors.errorLight,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.error + '30',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
 
   // Modal
   modalOverlay: {

@@ -97,6 +97,13 @@ export default function LoginScreen() {
             error={fieldErrors.password}
           />
 
+          <TouchableOpacity
+            style={styles.forgotLinkWrap}
+            onPress={() => router.push('/(auth)/forgot-password')}
+          >
+            <Text style={styles.forgotLink}>¿Olvidaste tu contraseña?</Text>
+          </TouchableOpacity>
+
           <Button
             title="Iniciar Sesión"
             onPress={handleLogin}
@@ -174,6 +181,9 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   formTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.xs },
+
+  forgotLinkWrap: { alignSelf: 'flex-end', marginTop: -spacing.xs, marginBottom: spacing.xs },
+  forgotLink: { ...typography.bodyMd, color: colors.primary, fontWeight: '600' },
 
   errorBanner: {
     flexDirection: 'row',

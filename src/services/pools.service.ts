@@ -21,12 +21,38 @@ export async function fetchPools(userId: string): Promise<Pool[]> {
 
   if (error) throw new AppError('FETCH_POOLS_FAILED', error.message);
 
-  return ((data ?? []) as PoolMemberPoolsRow[])
+  const fromMembers = ((data ?? []) as PoolMemberPoolsRow[])
     .flatMap((row) => {
       if (!row.pools) return [];
       return Array.isArray(row.pools) ? row.pools : [row.pools];
     })
-    .filter(Boolean);
+    .filter(Boolean) as Pool[];
+
+  const seen = new Set(fromMembers.map((p) => p.id));
+
+  // Pools donde eres admin pero no aparecías en pool_members (RLS / bug de flujo).
+  // Tras migración 011 la SELECT por admin_id funciona; aquí reinsertamos miembro si falta.
+  const { data: ownedPools, error: ownedErr } = await supabase
+    .from('pools')
+    .select('id, name, admin_id, invite_token, prediction_deadline, max_members, is_active, created_at, updated_at')
+    .eq('admin_id', userId);
+
+  if (!ownedErr && ownedPools?.length) {
+    for (const p of ownedPools as Pool[]) {
+      if (seen.has(p.id)) continue;
+      const { error: insErr } = await supabase.from('pool_members').insert({
+        pool_id: p.id,
+        user_id: userId,
+        role: 'admin',
+      });
+      if (!insErr) {
+        fromMembers.push(p);
+        seen.add(p.id);
+      }
+    }
+  }
+
+  return fromMembers;
 }
 
 export async function fetchPoolById(poolId: string): Promise<Pool> {

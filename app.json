@@ -41,10 +41,14 @@
     "scheme": "mundialquiniela",
     "extra": {
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
+        "projectId": "edfdddde-edfc-4a0c-a6a1-0b3e7f541116"
       },
       "supabaseUrl": "https://gelmnydchiiohryyxovv.supabase.co",
-      "supabaseAnonKey": "sb_publishable_61v_3SPzn1t3cWryGbXGGg_mmH61B9k"
-    }
+      "supabaseAnonKey": "sb_publishable_61v_3SPzn1t3cWryGbXGGg_mmH61B9k",
+      "router": {
+        "origin": false
+      }
+    },
+    "owner": "antonioccudda"
   }
 }
