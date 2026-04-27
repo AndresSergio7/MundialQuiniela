@@ -48,12 +48,10 @@ export default function PredictionsScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [tournamentLocked, setTournamentLocked] = useState(false);
 
-  const isDeadlinePassed = currentPool
-    ? new Date(currentPool.prediction_deadline) <= new Date()
-    : false;
   const isFinal = submission?.is_final === true;
-  const isLocked = isDeadlinePassed || isFinal || mode === 'view';
+  const isLocked = tournamentLocked;
 
   const loadAll = useCallback(async (pool?: Pool) => {
     const activePool = pool ?? currentPool;
@@ -79,8 +77,16 @@ export default function PredictionsScreen() {
     }
     setLocalScores(scores);
 
-    const deadlinePast = new Date(activePool.prediction_deadline) <= new Date();
-    setMode(sub?.is_final || (sub?.is_valid && !deadlinePast) ? 'view' : 'edit');
+    const anyStarted = allMatches.some(
+      (m) => m.status === 'live' || m.status === 'finished',
+    );
+    const scheduledDates = allMatches
+      .filter((m) => m.status === 'scheduled' || m.status === 'postponed')
+      .map((m) => new Date(m.match_date).getTime());
+    const firstMatchMs = scheduledDates.length > 0 ? Math.min(...scheduledDates) : Infinity;
+    const locked = anyStarted || Date.now() >= firstMatchMs - 60_000;
+    setTournamentLocked(locked);
+    setMode(locked ? 'view' : 'edit');
     setLoading(false);
   }, [currentPool, user]);
 
@@ -146,6 +152,7 @@ export default function PredictionsScreen() {
     if (submitResult.success) {
       const sub = await getSubmissionStatus(currentPool.id, user.id);
       setSubmission(sub);
+      setMode('edit');
       setShowSuccessModal(true);
     } else {
       setValidationErrors(submitResult.errors);
@@ -253,8 +260,7 @@ export default function PredictionsScreen() {
   }
 
   const pct = matches.length > 0 ? Math.round((filledCount / matches.length) * 100) : 0;
-  const showEditActions = mode === 'edit' && !isDeadlinePassed;
-  const showModifyAction = mode === 'view' && !isFinal && !isDeadlinePassed;
+  const showEditActions = !tournamentLocked;
 
   if (!currentPool) {
     return (
@@ -320,13 +326,21 @@ export default function PredictionsScreen() {
           ListHeaderComponent={
             <View>
               {/* Status / progress bar */}
-              {mode === 'view' && isFinal ? (
+              {tournamentLocked ? (
                 <View style={styles.finalBanner}>
                   <Ionicons name="shield-checkmark" size={20} color={colors.accent} />
-                  <Text style={styles.finalBannerText}>Quiniela enviada y bloqueada</Text>
+                  <Text style={styles.finalBannerText}>
+                    {isFinal ? 'Quiniela enviada y bloqueada' : 'El torneo ya inició — no se puede editar'}
+                  </Text>
                 </View>
               ) : (
                 <View style={styles.progressCard}>
+                  {isFinal && (
+                    <View style={styles.submittedInlineBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                      <Text style={styles.submittedInlineText}>Enviada — puedes seguir editando hasta que inicie el mundial</Text>
+                    </View>
+                  )}
                   <View style={styles.progressRow}>
                     <Text style={styles.progressLabel}>
                       {filledCount} / {matches.length} partidos
@@ -336,9 +350,6 @@ export default function PredictionsScreen() {
                   <View style={styles.progressTrack}>
                     <View style={[styles.progressFill, { width: `${pct}%` }]} />
                   </View>
-                  {isDeadlinePassed && (
-                    <Text style={styles.deadlineLabel}>⏰ Plazo cerrado</Text>
-                  )}
                 </View>
               )}
 
@@ -403,24 +414,14 @@ export default function PredictionsScreen() {
           }
           ListFooterComponent={
             <View style={styles.footer}>
-              {isDeadlinePassed ? (
-                <Text style={styles.deadlinePassedText}>
-                  El plazo de predicciones ha cerrado.
-                </Text>
-              ) : mode === 'view' ? (
+              {tournamentLocked ? (
                 <Card style={styles.submittedCard}>
-                  <Ionicons name="shield-checkmark" size={32} color={isFinal ? colors.accent : colors.primary} />
-                  <Text style={styles.submittedCardTitle}>
-                    {isFinal ? 'Quiniela Bloqueada' : 'Quiniela Válida'}
-                  </Text>
-                  <Text style={styles.submittedCardSub}>
-                    {isFinal
-                      ? 'Tu quiniela fue enviada definitivamente.'
-                      : 'Puedes modificar hasta el cierre.'}
-                  </Text>
+                  <Ionicons name="shield-checkmark" size={32} color={colors.accent} />
+                  <Text style={styles.submittedCardTitle}>Quiniela Bloqueada</Text>
+                  <Text style={styles.submittedCardSub}>El torneo ya inició.</Text>
                 </Card>
               ) : null}
-              {!allFilled && mode === 'edit' && !isDeadlinePassed && (
+              {!allFilled && !tournamentLocked && (
                 <Text style={styles.hint}>
                   Faltan {matches.length - filledCount} partido{matches.length - filledCount !== 1 ? 's' : ''} para poder enviar
                 </Text>
@@ -439,7 +440,7 @@ export default function PredictionsScreen() {
             </View>
 
             <View style={styles.floatingButtonsRow}>
-              {showEditActions ? (
+              {showEditActions && (
                 <>
                   <Button
                     title={saving ? 'Guardando…' : 'Guardar'}
@@ -453,7 +454,7 @@ export default function PredictionsScreen() {
                     style={{ flex: 1 }}
                   />
                   <Button
-                    title="Enviar"
+                    title={isFinal ? 'Re-enviar' : 'Enviar'}
                     size="sm"
                     variant="gold"
                     onPress={() => setShowConfirmSubmit(true)}
@@ -463,18 +464,6 @@ export default function PredictionsScreen() {
                     style={{ flex: 1.1 }}
                   />
                 </>
-              ) : (
-                showModifyAction && (
-                  <Button
-                    title="Modificar"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => { setMode('edit'); setError(null); }}
-                    fullWidth={false}
-                    icon={<Ionicons name="create-outline" size={16} color="#fff" />}
-                    style={{ flex: 1 }}
-                  />
-                )
               )}
 
               <Button
@@ -486,7 +475,7 @@ export default function PredictionsScreen() {
                 loading={exportingPdf}
                 fullWidth={false}
                 icon={<Ionicons name="print-outline" size={16} color={colors.primary} />}
-                style={{ flex: showEditActions || showModifyAction ? 0.9 : 1 }}
+                style={{ flex: showEditActions ? 0.9 : 1 }}
               />
             </View>
           </View>
@@ -502,7 +491,7 @@ export default function PredictionsScreen() {
             </View>
             <Text style={styles.modalTitle}>¿Enviar quiniela?</Text>
             <Text style={styles.modalBody}>
-              Una vez enviada no podrás cambiar tus predicciones. ¿Estás seguro?
+              Tu quiniela quedará registrada. Podrás seguir editando hasta 1 minuto antes de que inicie el primer partido del mundial.
             </Text>
             {submitting ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
@@ -535,11 +524,11 @@ export default function PredictionsScreen() {
             </View>
             <Text style={[styles.modalTitle, { color: colors.primary }]}>¡Quiniela enviada!</Text>
             <Text style={styles.modalBody}>
-              Tu quiniela ha sido registrada exitosamente. ¡Buena suerte!
+              Tu quiniela ha sido registrada. Puedes seguir editando hasta que inicie el mundial. ¡Buena suerte!
             </Text>
             <TouchableOpacity
               style={[styles.modalBtn, styles.modalBtnPrimary, { alignSelf: 'center', marginTop: spacing.lg }]}
-              onPress={() => { setShowSuccessModal(false); setMode('view'); }}
+              onPress={() => setShowSuccessModal(false)}
             >
               <Text style={[styles.modalBtnText, { color: '#fff' }]}>Entendido</Text>
             </TouchableOpacity>
@@ -686,13 +675,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.full,
   },
-  deadlineLabel: {
-    fontSize: 11,
-    color: colors.error,
-    fontWeight: '600',
-    marginTop: spacing.xs,
-  },
-
   finalBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -705,6 +687,19 @@ const styles = StyleSheet.create({
     borderColor: colors.accent + '50',
   },
   finalBannerText: { fontSize: 14, fontWeight: '700', color: colors.navy },
+  submittedInlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.successLight,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  submittedInlineText: { fontSize: 11, color: colors.success, fontWeight: '700', flex: 1 },
 
   errorBanner: {
     flexDirection: 'row',
@@ -732,12 +727,6 @@ const styles = StyleSheet.create({
   successText: { fontSize: 12, color: colors.success, fontWeight: '700' },
 
   footer: { marginTop: spacing.lg, paddingBottom: spacing.xxl },
-  deadlinePassedText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingVertical: spacing.xl,
-  },
   submittedCard: {
     alignItems: 'center',
     paddingVertical: spacing.xl,

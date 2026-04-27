@@ -19,17 +19,21 @@ async function submitQuinielaWithoutRpc(
 ): Promise<void> {
   const nowIso = new Date().toISOString();
 
-  const { data: pool, error: poolError } = await supabase
+  const { error: poolError } = await supabase
     .from('pools')
-    .select('id, prediction_deadline')
+    .select('id')
     .eq('id', poolId)
     .maybeSingle();
   if (poolError) throw new AppError('SUBMIT_QUINIELA_FAILED', poolError.message);
-  if (!pool) throw new AppError('SUBMIT_QUINIELA_REJECTED', 'Pool not found.');
 
-  const deadline = new Date(pool.prediction_deadline).getTime();
-  if (!Number.isNaN(deadline) && deadline <= Date.now()) {
-    throw new AppError('SUBMIT_QUINIELA_REJECTED', 'Prediction deadline has passed.');
+  const { data: startedMatch } = await supabase
+    .from('matches')
+    .select('id')
+    .in('status', ['live', 'finished'])
+    .limit(1)
+    .maybeSingle();
+  if (startedMatch) {
+    throw new AppError('SUBMIT_QUINIELA_REJECTED', 'El torneo ya comenzó. No se puede enviar la quiniela.');
   }
 
   const { error: submissionError } = await supabase.from('submissions').upsert(
@@ -45,14 +49,8 @@ async function submitQuinielaWithoutRpc(
   );
   if (submissionError) throw new AppError('SUBMIT_QUINIELA_FAILED', submissionError.message);
 
-  if (validation.valid) {
-    const { error: lockError } = await supabase
-      .from('predictions')
-      .update({ is_locked: true })
-      .eq('pool_id', poolId)
-      .eq('user_id', userId);
-    if (lockError) throw new AppError('SUBMIT_QUINIELA_FAILED', lockError.message);
-  }
+  // Predictions are intentionally NOT locked here — users can re-edit after submit
+  // until the tournament starts (migration 017).
 
   const { error: standingsError } = await supabase.from('standings').upsert(
     {
@@ -166,6 +164,20 @@ export async function submitQuiniela(poolId: string, userId: string): Promise<vo
 }
 
 export const fetchUserPredictions = fetchPredictions;
+
+export async function fetchPredictionsForMember(
+  poolId: string,
+  userId: string,
+): Promise<Prediction[]> {
+  const { data, error } = await supabase
+    .from('predictions')
+    .select('*, match:matches(*)')
+    .eq('pool_id', poolId)
+    .eq('user_id', userId)
+    .order('match_id');
+  if (error) throw new AppError('FETCH_PREDICTIONS_FAILED', error.message);
+  return (data ?? []) as Prediction[];
+}
 export const getPredictions = (userId: string, poolId: string) => fetchPredictions(poolId, userId);
 export const getSubmissionStatus = fetchSubmission;
 

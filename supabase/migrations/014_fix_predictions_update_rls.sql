@@ -7,6 +7,9 @@
 --
 -- Fix: keep the USING restriction (only edit currently-unlocked rows) but relax
 -- the WITH CHECK so the resulting row can have any is_locked value.
+--
+-- Lock rule (migration 016 extends this): predictions are editable only while
+-- no match is live or finished. Once any match starts, all predictions lock.
 
 DROP POLICY IF EXISTS "predictions_update_own_unlocked" ON predictions;
 
@@ -14,9 +17,9 @@ CREATE POLICY "predictions_update_own_unlocked" ON predictions FOR UPDATE
   USING (
     user_id = auth.uid()
     AND is_locked = false
-    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+    AND NOT EXISTS (SELECT 1 FROM matches WHERE status IN ('live', 'finished'))
   )
   WITH CHECK (
     user_id = auth.uid()
-    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+    AND NOT EXISTS (SELECT 1 FROM matches WHERE status IN ('live', 'finished'))
   );

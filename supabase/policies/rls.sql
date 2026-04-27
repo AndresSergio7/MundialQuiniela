@@ -89,18 +89,18 @@ CREATE POLICY "predictions_insert_own" ON predictions FOR INSERT
     user_id = auth.uid()
     AND pool_id IN (SELECT pool_id FROM pool_members WHERE user_id = auth.uid())
     AND is_locked = false
-    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+    AND NOT EXISTS (SELECT 1 FROM matches WHERE status IN ('live', 'finished'))
   );
 
 CREATE POLICY "predictions_update_own_unlocked" ON predictions FOR UPDATE
   USING (
     user_id = auth.uid()
     AND is_locked = false
-    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+    AND NOT EXISTS (SELECT 1 FROM matches WHERE status IN ('live', 'finished'))
   )
   WITH CHECK (
     user_id = auth.uid()
-    AND (SELECT prediction_deadline FROM pools WHERE id = pool_id) > NOW()
+    AND NOT EXISTS (SELECT 1 FROM matches WHERE status IN ('live', 'finished'))
   );
 
 -- ============================================================

@@ -227,6 +227,27 @@ export async function joinViaInvite(
   poolId: string,
   token: string,
 ): Promise<{ success: boolean; error: string | null }> {
+  // Use the SECURITY DEFINER RPC so non-members can look up the pool
+  // (the RLS policy pools_select_member would otherwise return null for non-members).
+  const { data: rpcData, error: rpcError } = await supabase.rpc('join_pool_via_invite', {
+    p_pool_id: poolId,
+    p_token: token,
+  });
+
+  if (!rpcError) {
+    const result = rpcData as { success: boolean; error: string | null } | null;
+    return {
+      success: result?.success ?? false,
+      error: result?.error ?? null,
+    };
+  }
+
+  // Fallback for environments where migration 018 hasn't been applied yet.
+  // Note: this path will fail with "Pool not found" for non-members due to RLS.
+  if (!rpcError.message.toLowerCase().includes('could not find the function')) {
+    return { success: false, error: rpcError.message };
+  }
+
   const { data: pool, error: poolError } = await supabase
     .from('pools')
     .select('invite_token, is_active, max_members')

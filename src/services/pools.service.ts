@@ -11,10 +11,7 @@ export async function fetchPools(userId: string): Promise<Pool[]> {
     .from('pool_members')
     .select(
       `
-        pools (
-          id, name, admin_id, invite_token, prediction_deadline,
-          max_members, is_active, created_at, updated_at
-        )
+        pools (*)
       `,
     )
     .eq('user_id', userId);
@@ -34,7 +31,7 @@ export async function fetchPools(userId: string): Promise<Pool[]> {
   // Tras migración 011 la SELECT por admin_id funciona; aquí reinsertamos miembro si falta.
   const { data: ownedPools, error: ownedErr } = await supabase
     .from('pools')
-    .select('id, name, admin_id, invite_token, prediction_deadline, max_members, is_active, created_at, updated_at')
+    .select('*')
     .eq('admin_id', userId);
 
   if (!ownedErr && ownedPools?.length) {
@@ -287,3 +284,27 @@ export async function getPoolMembers(poolId: string): Promise<PoolMember[]> {
 }
 
 export const listMyPools = fetchPools;
+
+export async function updatePoolNotes(
+  poolId: string,
+  notes: string,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('pools')
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq('id', poolId);
+  return { error: error?.message ?? null };
+}
+
+export async function updateMemberPaidStatus(
+  poolId: string,
+  userId: string,
+  isPaid: boolean,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('pool_members')
+    .update({ is_paid: isPaid })
+    .eq('pool_id', poolId)
+    .eq('user_id', userId);
+  return { error: error?.message ?? null };
+}

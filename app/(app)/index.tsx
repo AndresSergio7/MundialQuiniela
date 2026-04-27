@@ -150,36 +150,7 @@ export default function HomeScreen() {
   const totalPools = pools.length;
   const submittedPools = Object.values(submissions).filter((s) => s?.is_valid).length;
   const finalPools = Object.values(submissions).filter((s) => s?.is_final).length;
-  const selectedPool = currentPool ?? pools[0] ?? null;
-  const selectedSubmission = selectedPool ? submissions[selectedPool.id] : null;
-  const selectedErrors = selectedSubmission?.validation_errors ?? [];
-  const selectedHasErrors = selectedErrors.length > 0;
-  const selectedIsFinal = selectedSubmission?.is_final === true;
-  const selectedIsValid = selectedSubmission?.is_valid === true;
-  const selectedDeadlineLeftDays = selectedPool
-    ? Math.ceil((new Date(selectedPool.prediction_deadline).getTime() - Date.now()) / 86400000)
-    : null;
 
-  let nextActionTitle = 'Tu próxima jugada';
-  let nextActionSubtitle = 'Selecciona una quiniela para continuar.';
-  let nextActionButton = 'Seleccionar quiniela';
-
-  if (selectedPool) {
-    nextActionSubtitle = `Quiniela activa: ${selectedPool.name}`;
-    if (selectedIsFinal) {
-      nextActionTitle = 'Quiniela enviada';
-      nextActionButton = 'Ver quiniela enviada';
-    } else if (selectedHasErrors) {
-      nextActionTitle = 'Corrige tu quiniela';
-      nextActionButton = 'Corregir ahora';
-    } else if (selectedIsValid) {
-      nextActionTitle = 'Lista para enviar';
-      nextActionButton = 'Revisar y enviar';
-    } else {
-      nextActionTitle = 'Completa tu quiniela';
-      nextActionButton = 'Continuar captura';
-    }
-  }
 
   return (
     <ScrollView
@@ -314,7 +285,7 @@ export default function HomeScreen() {
                               ]}
                             >
                               <Ionicons
-                                name={isPoolAdmin ? 'crown-outline' : 'person-outline'}
+                                name={isPoolAdmin ? 'trophy-outline' : 'person-outline'}
                                 size={12}
                                 color={isPoolAdmin ? colors.accent : colors.primary}
                               />
@@ -372,63 +343,6 @@ export default function HomeScreen() {
             );
           })
         )}
-      </View>
-
-      {/* ── Context card (no redundant nav) ── */}
-      <View style={styles.contextWrap}>
-        <View style={styles.contextCard}>
-          <View style={styles.contextTopRow}>
-            <View>
-              <Text style={styles.contextKicker}>Siguiente paso</Text>
-              <Text style={styles.contextTitle}>{nextActionTitle}</Text>
-              <Text style={styles.contextSubtitle}>{nextActionSubtitle}</Text>
-            </View>
-
-            <View style={styles.contextMetrics}>
-              <Text style={styles.contextMetricValue}>{submittedPools}/{Math.max(totalPools, 1)}</Text>
-              <Text style={styles.contextMetricLabel}>quinielas listas</Text>
-            </View>
-          </View>
-
-          {selectedPool && (
-            <View style={styles.contextStatusRow}>
-              <View
-                style={[
-                  styles.contextStatusPill,
-                  selectedIsFinal
-                    ? styles.contextStatusFinal
-                    : selectedIsValid
-                    ? styles.contextStatusValid
-                    : styles.contextStatusPending,
-                ]}
-              >
-                <Text style={styles.contextStatusText}>
-                  {selectedIsFinal
-                    ? 'Enviada'
-                    : selectedIsValid
-                    ? 'Lista'
-                    : selectedHasErrors
-                    ? 'Con errores'
-                    : 'Pendiente'}
-                </Text>
-              </View>
-
-              <Text style={styles.contextDeadlineText}>
-                {selectedDeadlineLeftDays !== null
-                  ? selectedDeadlineLeftDays > 0
-                    ? `Cierra en ${selectedDeadlineLeftDays} días`
-                    : 'La quiniela ya cerró'
-                  : ''}
-              </Text>
-            </View>
-          )}
-
-          <Button
-            title={nextActionButton}
-            onPress={() => router.push('/(app)/predictions')}
-            style={{ marginTop: spacing.md }}
-          />
-        </View>
       </View>
 
       {/* ── Confirm delete / leave ── */}
@@ -629,99 +543,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.navy,
-  },
-
-  contextWrap: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  contextCard: {
-    backgroundColor: '#F3F8F5',
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: '#CFE2D6',
-    padding: spacing.md,
-    ...shadows.md,
-  },
-  contextTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  contextKicker: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
-  contextTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: colors.text,
-    marginTop: 2,
-  },
-  contextSubtitle: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  contextMetrics: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#C6D9CD',
-    backgroundColor: '#EAF4EE',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    alignItems: 'center',
-  },
-  contextMetricValue: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: colors.primaryDark,
-  },
-  contextMetricLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  contextStatusRow: {
-    marginTop: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  contextStatusPill: {
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-  },
-  contextStatusPending: {
-    backgroundColor: '#EFF3F8',
-    borderColor: '#CBD7E4',
-  },
-  contextStatusValid: {
-    backgroundColor: '#EAF6EE',
-    borderColor: 'rgba(10,107,53,0.35)',
-  },
-  contextStatusFinal: {
-    backgroundColor: '#FFF5D7',
-    borderColor: 'rgba(201,168,76,0.45)',
-  },
-  contextStatusText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  contextDeadlineText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '700',
   },
 
   // Section

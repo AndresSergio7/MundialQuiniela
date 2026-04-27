@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadows } from './ui/theme';
 import type { Standing } from '@/types';
@@ -7,6 +7,11 @@ import type { Standing } from '@/types';
 interface StandingRowProps {
   standing: Standing;
   isCurrentUser?: boolean;
+  isAdmin?: boolean;
+  isPaid?: boolean;
+  canViewPdf?: boolean;
+  onPress?: () => void;
+  onTogglePaid?: (isPaid: boolean) => void;
 }
 
 const MEDAL: Record<number, { bg: string; textColor: string; icon?: string }> = {
@@ -15,18 +20,30 @@ const MEDAL: Record<number, { bg: string; textColor: string; icon?: string }> = 
   3: { bg: colors.bronze, textColor: '#fff',       icon: '🥉' },
 };
 
-export function StandingRow({ standing, isCurrentUser }: StandingRowProps) {
+export function StandingRow({
+  standing,
+  isCurrentUser,
+  isAdmin,
+  isPaid,
+  canViewPdf,
+  onPress,
+  onTogglePaid,
+}: StandingRowProps) {
   const rank = standing.rank ?? 99;
   const medal = MEDAL[rank];
   const isTop3 = rank <= 3;
 
   return (
-    <View style={[
-      styles.row,
-      isTop3 && styles.topRow,
-      isCurrentUser && styles.currentUser,
-      isTop3 && isCurrentUser && styles.topCurrentUser,
-    ]}>
+    <TouchableOpacity
+      activeOpacity={canViewPdf ? 0.75 : 1}
+      onPress={canViewPdf ? onPress : undefined}
+      style={[
+        styles.row,
+        isTop3 && styles.topRow,
+        isCurrentUser && styles.currentUser,
+        isTop3 && isCurrentUser && styles.topCurrentUser,
+      ]}
+    >
       <View style={[styles.leftAccent, isTop3 && styles.leftAccentTop, isCurrentUser && styles.leftAccentCurrent]} />
 
       {/* Rank */}
@@ -48,21 +65,47 @@ export function StandingRow({ standing, isCurrentUser }: StandingRowProps) {
       </View>
 
       <View style={styles.userInfo}>
-        <Text style={[styles.username, isCurrentUser && styles.usernameHighlight]} numberOfLines={1}>
-          {standing.profile?.username ?? 'Unknown'}
-          {isCurrentUser ? ' (tú)' : ''}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={[styles.username, isCurrentUser && styles.usernameHighlight]} numberOfLines={1}>
+            {standing.profile?.username ?? 'Unknown'}
+            {isCurrentUser ? ' (tú)' : ''}
+          </Text>
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() => onTogglePaid?.(!isPaid)}
+              style={[styles.paidBadge, isPaid ? styles.paidBadgeOn : styles.paidBadgeOff]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={isPaid ? 'checkmark-circle' : 'ellipse-outline'}
+                size={14}
+                color={isPaid ? colors.success : colors.textMuted}
+              />
+              <Text style={[styles.paidText, isPaid ? styles.paidTextOn : styles.paidTextOff]}>
+                {isPaid ? 'Pagado' : 'Pendiente'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={styles.subtitle}>
           {standing.exact_scores} exactos · {standing.correct_results} acertados · {standing.matches_played} partidos
         </Text>
       </View>
 
-      {/* Points */}
-      <View style={styles.pointsWrap}>
-        <Text style={[styles.points, isTop3 && styles.pointsTop]}>{standing.total_points}</Text>
-        <Text style={styles.ptLabel}>pts</Text>
+      {/* Points + PDF indicator */}
+      <View style={styles.rightWrap}>
+        <View style={styles.pointsWrap}>
+          <Text style={[styles.points, isTop3 && styles.pointsTop]}>{standing.total_points}</Text>
+          <Text style={styles.ptLabel}>pts</Text>
+        </View>
+        {canViewPdf && (
+          <View style={styles.pdfChip}>
+            <Ionicons name="document-outline" size={11} color={colors.primary} />
+            <Text style={styles.pdfChipText}>PDF</Text>
+          </View>
+        )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -137,6 +180,7 @@ const styles = StyleSheet.create({
   avatarLetter: { fontSize: 14, fontWeight: '800', color: '#fff' },
 
   userInfo: { flex: 1, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   username: {
     fontSize: 14,
     fontWeight: '700',
@@ -149,6 +193,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  paidBadgeOn: {
+    backgroundColor: colors.successLight,
+    borderColor: colors.primary + '50',
+  },
+  paidBadgeOff: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  paidText: { fontSize: 10, fontWeight: '700' },
+  paidTextOn: { color: colors.success },
+  paidTextOff: { color: colors.textMuted },
+
+  rightWrap: { alignItems: 'flex-end', gap: spacing.xs },
   pointsWrap: {
     alignItems: 'flex-end',
     backgroundColor: '#F5F9FF',
@@ -170,4 +236,17 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     marginTop: -2,
   },
+
+  pdfChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#EAF3FF',
+    borderWidth: 1,
+    borderColor: '#C5D8F0',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 3,
+  },
+  pdfChipText: { fontSize: 10, fontWeight: '700', color: colors.primary },
 });

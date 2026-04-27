@@ -23,6 +23,7 @@ export interface Pool {
   prediction_deadline: string;
   max_members: number;
   is_active: boolean;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +43,7 @@ export interface PoolMember {
   user_id: string;
   role: MemberRole;
   joined_at: string;
+  is_paid: boolean;
   profile?: Profile;
 }
 

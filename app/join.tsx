@@ -60,10 +60,11 @@ export default function JoinScreen() {
         'Pool is full.': 'Esta quiniela ya alcanzó su límite de participantes.',
         'Already a member of this pool.': 'Ya eres miembro de esta quiniela.',
         'Pool is not active or does not exist.': 'Esta quiniela ya no acepta nuevos miembros.',
-        'Invalid invite token.': 'Este link es inválido o ha sido cambiado.',
-        'Pool not found.': 'Esta quiniela ya no existe.',
+        'Invalid invite token.': 'El token de invitación es inválido o ha cambiado.',
+        'Pool not found.': 'Esta quiniela no existe en este servidor. El link puede haber sido generado desde un entorno diferente (dev vs producción).',
+        'Not authenticated.': 'Necesitas iniciar sesión para unirte.',
       };
-      setMessage(friendly[error ?? ''] ?? error ?? 'No se pudo unir a la quiniela. Intenta de nuevo.');
+      setMessage(friendly[error ?? ''] ?? `Error: ${error ?? 'No se pudo unir a la quiniela.'}`);
     }
   }
 
