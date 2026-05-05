@@ -1,0 +1,10 @@
+# Orchestra Pipeline — MundialQuiniela
+# Generado automáticamente. Edita desde la interfaz visual.
+name: MundialQuiniela
+version: "1.0"
+nodes:
+  - id: install
+    label: Install Dependencies
+    image: node:20-alpine
+    command: npm install
+    dependencies: []

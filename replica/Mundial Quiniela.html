@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Quiniela Mundial 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: radial-gradient(ellipse at top, #1a3528 0%, #0a1410 60%, #050908 100%);
+    color: #fff;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  button { font-family: inherit; }
+  input { font-family: inherit; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+  @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+  @keyframes slideUp { from{transform:translateY(100%);} to{transform:translateY(0);} }
+  @keyframes toastIn { from{opacity:0;transform:translateY(-8px);} to{opacity:1;transform:translateY(0);} }
+  /* hide scrollbars */
+  ::-webkit-scrollbar { width:0; height:0; }
+  *::-webkit-scrollbar { display:none; }
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+
+  #root { width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; padding:12px; }
+  .device-scale-wrap { display:flex; align-items:center; justify-content:center; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="app-shared.jsx"></script>
+<script type="text/babel" src="app-screens.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "showOnboarding": false,
+  "accent": "gold",
+  "league": "Oficina FC 2026"
+}/*EDITMODE-END*/;
+
+function emptyPredictions() {
+  const out = {};
+  MOCK_GROUPS.forEach(g => {
+    buildMatches(g).forEach((_, i) => { out[`${g.id}-${i}`] = { h:'', a:'' }; });
+  });
+  return out;
+}
+
+function seedPredictions() {
+  const out = emptyPredictions();
+  const seed = [
+    ['A-0',2,1],['A-1',1,1],['A-2',2,0],['A-3',0,0],['A-4',3,1],['A-5',1,2],
+    ['B-0',1,2],['B-1',2,2],['B-2',0,1],['B-3',3,0],['B-4',1,1],
+    ['C-0',2,2],['C-1',1,0],['C-2',3,1],['C-3',1,1],
+    ['D-0',2,1],['D-1',1,2],['D-2',0,0],
+    ['E-0',1,1],['E-1',2,1],
+    ['F-0',1,0],['F-1',2,2],['F-2',1,1],['F-3',0,1],
+  ];
+  seed.forEach(([k,h,a]) => { out[k] = { h:String(h), a:String(a) }; });
+  return out;
+}
+
+const INITIAL_QUINIELAS = [
+  { id:'ofc',  name:'Oficina FC 2026', color:'#d4a017', members:7,  maxMembers:10, predictions: seedPredictions() },
+  { id:'fam',  name:'Familia Mundial', color:'#10b981', members:5,  maxMembers:10, predictions: emptyPredictions() },
+  { id:'amg',  name:'Los Compas',      color:'#3b82f6', members:18, maxMembers:25, predictions: (() => {
+    const o = emptyPredictions();
+    [['A-0',1,0],['A-1',2,1],['B-0',2,1],['C-0',3,2]].forEach(([k,h,a]) => o[k]={h:String(h),a:String(a)});
+    return o;
+  })() },
+];
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAKS_DEFAULTS);
+  const [view, setView] = useState(tweaks.showOnboarding ? 'onboarding' : 'home');
+  const [tab, setTab] = useState('home');
+  const [quinielas, setQuinielas] = useState(INITIAL_QUINIELAS);
+  const [activeQId, setActiveQId] = useState(INITIAL_QUINIELAS[0].id);
+  const [showPricing, setShowPricing] = useState(false);
+
+  const activeQ = quinielas.find(q => q.id === activeQId) || quinielas[0];
+
+  const setPrediction = (key, side, val) => {
+    setQuinielas(qs => qs.map(q => q.id === activeQId
+      ? { ...q, predictions: { ...q.predictions, [key]: { ...q.predictions[key], [side]: val } } }
+      : q));
+  };
+
+  const copyFrom = (sourceId) => {
+    const src = quinielas.find(q => q.id === sourceId);
+    if (!src) return;
+    setQuinielas(qs => qs.map(q => q.id === activeQId
+      ? { ...q, predictions: JSON.parse(JSON.stringify(src.predictions)) }
+      : q));
+  };
+
+  const purchaseQuiniela = ({ name, maxMembers, color }) => {
+    const id = 'q' + Date.now().toString(36);
+    const newQ = { id, name, color, members:1, maxMembers, predictions: emptyPredictions() };
+    setQuinielas(qs => [...qs, newQ]);
+    setActiveQId(id);
+  };
+
+  const setActiveQ = (id) => setActiveQId(id);
+  const goTo = (t) => { setTab(t); };
+  const onAddNew = () => setShowPricing(true);
+
+  let body;
+  if (view === 'onboarding') {
+    body = <Onboarding onDone={() => { setTweak('showOnboarding', false); setView('app'); }} />;
+  } else if (showPricing) {
+    body = <PricingScreen onClose={() => setShowPricing(false)} onPurchase={purchaseQuiniela} />;
+  } else if (tab === 'home') {
+    body = <HomeScreen activeQ={activeQ} quinielas={quinielas} setActiveQ={setActiveQ} onGoTo={goTo} onOpenLeague={() => setTab('invite')} onAddNew={onAddNew}/>;
+  } else if (tab === 'quiniela') {
+    body = <QuinielaScreen activeQ={activeQ} quinielas={quinielas} setActiveQ={setActiveQ} setPrediction={setPrediction} onSubmit={()=>{}} onAddNew={onAddNew} onCopyFrom={copyFrom}/>;
+  } else if (tab === 'live') {
+    body = <LiveScreen activeQ={activeQ} quinielas={quinielas} setActiveQ={setActiveQ} onAddNew={onAddNew}/>;
+  } else if (tab === 'table') {
+    body = <LeaderboardScreen activeQ={activeQ} quinielas={quinielas} setActiveQ={setActiveQ} onAddNew={onAddNew}/>;
+  } else if (tab === 'invite') {
+    body = <InviteScreen activeQ={activeQ} quinielas={quinielas} setActiveQ={setActiveQ} onUpgrade={() => setShowPricing(true)} onAddNew={onAddNew}/>;
+  }
+
+  // Bottom nav (hidden on onboarding & pricing fullscreen)
+  const showNav = view !== 'onboarding' && !showPricing;
+
+  const tabs = [
+    { id:'home',     label:'Inicio',    icon: <Ic.Home /> },
+    { id:'quiniela', label:'Quiniela',  icon: <Ic.Ball /> },
+    { id:'live',     label:'En vivo',   icon: <Ic.Live />, dot:true },
+    { id:'table',    label:'Tabla',     icon: <Ic.Table /> },
+    { id:'invite',   label:'Liga',      icon: <Ic.Users /> },
+  ];
+
+  return (
+    <ToastProvider>
+      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',background:'#fff'}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',minHeight:0}}>
+          {body}
+        </div>
+
+        {showNav && (
+          <div style={{
+            background:'#fff',
+            borderTop:`1px solid ${P.border}`,
+            padding:'8px 6px 8px',
+            display:'flex',justifyContent:'space-around',
+            boxShadow:'0 -2px 12px rgba(13,61,46,0.04)',
+          }}>
+            {tabs.map(t => {
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  flex:1,padding:'5px 2px 2px',background:'none',border:'none',cursor:'pointer',
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:3,
+                  color: active ? P.green : P.textLight,
+                  position:'relative',
+                }}>
+                  <div style={{position:'relative'}}>
+                    {t.icon}
+                    {t.dot && <div style={{position:'absolute',top:-1,right:-3,width:7,height:7,borderRadius:'50%',background:P.red,border:'1.5px solid #fff'}}/>}
+                  </div>
+                  <span style={{fontSize:9,fontWeight: active ? 800 : 600,letterSpacing:0.2}}>{t.label}</span>
+                  {active && <div style={{position:'absolute',bottom:-8,width:24,height:2.5,borderRadius:2,background:P.green}}/>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Demo">
+          <TweakButton label="Reiniciar onboarding" onClick={() => { setTweak('showOnboarding', true); setView('onboarding'); }} />
+          <TweakButton label="Vaciar predicciones" onClick={() => setQuinielas(qs => qs.map(q => q.id === activeQId ? { ...q, predictions: emptyPredictions() } : q))} />
+          <TweakButton label="Auto-llenar todas" onClick={() => setQuinielas(qs => qs.map(q => q.id === activeQId ? { ...q, predictions: (() => { const o={}; MOCK_GROUPS.forEach(g => buildMatches(g).forEach((_,i) => o[`${g.id}-${i}`]={h:String(Math.floor(Math.random()*4)),a:String(Math.floor(Math.random()*4))})); return o; })() } : q))} />
+          <TweakButton label="Comprar quiniela" onClick={() => setShowPricing(true)} />
+        </TweakSection>
+        <TweakSection title="Liga">
+          <TweakText label="Nombre" value={tweaks.league} onChange={v => setTweak('league', v)} />
+        </TweakSection>
+      </TweaksPanel>
+    </ToastProvider>
+  );
+}
+
+function Mounted() {
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const compute = () => {
+      const W = 402, H = 874, pad = 24;
+      const s = Math.min(1, (window.innerWidth - pad) / W, (window.innerHeight - pad) / H);
+      setScale(s);
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+  return (
+    <div className="device-scale-wrap" style={{transform:`scale(${scale})`,transformOrigin:'center center'}}>
+      <div style={{position:'relative'}}>
+        <IOSDevice dark={true}>
+          <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column'}}>
+            <App />
+          </div>
+        </IOSDevice>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Mounted />);
+</script>
+</body>
+</html>

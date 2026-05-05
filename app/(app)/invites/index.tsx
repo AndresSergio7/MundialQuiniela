@@ -3,7 +3,6 @@ import {
   View,
   Text,
   FlatList,
-  ScrollView,
   StyleSheet,
   Share,
   TouchableOpacity,
@@ -24,7 +23,7 @@ import type { PoolMember, Pool } from '@/types';
 export default function InvitesScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { currentPool, pools, setCurrentPool, setPools } = usePoolStore();
+  const { currentPool, setCurrentPool, setPools } = usePoolStore();
 
   const [members, setMembers] = useState<PoolMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +47,6 @@ export default function InvitesScreen() {
   }
 
   function handlePoolSelect(pool: Pool) {
-    setCurrentPool(pool);
     setError(null);
     setRemoveError(null);
     setShareSuccess(false);
@@ -186,36 +184,7 @@ export default function InvitesScreen() {
 
   return (
     <View style={styles.screen}>
-      <PoolSelectorBar onPoolChange={(pool) => loadData(pool)} />
-
-      {pools.length > 1 && (
-        <View style={styles.switcherWrap}>
-          <View style={styles.switcherHeader}>
-            <Text style={styles.switcherLabel}>Selecciona quiniela</Text>
-            <Text style={styles.switcherHint}>Activa: {currentPool.name}</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.switcherList}
-          >
-            {pools.map((pool) => {
-              const isActive = pool.id === currentPool.id;
-              return (
-                <TouchableOpacity
-                  key={pool.id}
-                  style={[styles.poolChip, isActive && styles.poolChipActive]}
-                  onPress={() => handlePoolSelect(pool)}
-                >
-                  <Text style={[styles.poolChipText, isActive && styles.poolChipTextActive]}>
-                    {pool.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+      <PoolSelectorBar onPoolChange={(pool) => handlePoolSelect(pool)} />
 
       {/* Invite hero card — admin only */}
       {isAdmin && (
@@ -497,41 +466,6 @@ const styles = StyleSheet.create({
     color: '#FDF6DC',
     fontWeight: '700',
   },
-  switcherWrap: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-  },
-  switcherHeader: {
-    marginBottom: spacing.xs,
-  },
-  switcherLabel: {
-    ...typography.tiny,
-    color: colors.text,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  switcherHint: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  switcherList: { gap: spacing.xs, paddingBottom: spacing.xs },
-  poolChip: {
-    backgroundColor: '#F6FAFF',
-    borderWidth: 1,
-    borderColor: '#CFE0F2',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  poolChipActive: {
-    backgroundColor: colors.navy,
-    borderColor: colors.accent,
-  },
-  poolChipText: { ...typography.caption, color: colors.text, fontWeight: '700' },
-  poolChipTextActive: { color: colors.accentLight },
-
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',

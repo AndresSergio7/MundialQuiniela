@@ -17,7 +17,6 @@ import { createPoolLegacy as createPool, listMyPools } from '@/services/pools.se
 import { applyUnusedEntitlementToPool, getSingleSoloAdminPoolId } from '@/services/invites.service';
 import { usePoolStore } from '@/store/pool';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { POOL_PLANS } from '@/types';
@@ -171,18 +170,28 @@ export default function PurchaseScreen() {
         <View style={styles.hero}>
           <View style={styles.heroGlowA} />
           <View style={styles.heroGlowB} />
-          <Text style={styles.heroEyebrow}>MUNDIAL 2026</Text>
+          <Text style={styles.heroEyebrow}>PAGOS</Text>
           <View style={styles.heroIconWrap}>
-            <Ionicons name="trophy" size={38} color={colors.accent} />
+            <Ionicons name="card" size={34} color={colors.accent} />
           </View>
           <Text style={styles.heroTitle}>
-            {upgradePoolId ? 'Amplía tu Quiniela' : 'Crear Quiniela'}
+            {upgradePoolId ? 'Amplía tu quiniela' : 'Planes de quiniela'}
           </Text>
           <Text style={styles.heroSubtitle}>
             {upgradePoolId
               ? 'Tu compra ampliará el cupo de tu quiniela para que puedas invitar más personas.'
-              : 'Elige un plan y empieza a jugar con tu gente. Una compra, una quiniela.'}
+              : 'Compra, crea tu quiniela y participa al instante. Diseño simple y escalable para crecer por ligas.'}
           </Text>
+          <View style={styles.heroMetaRow}>
+            <View style={styles.heroMetaChip}>
+              <Ionicons name="flash-outline" size={12} color={colors.accentBright} />
+              <Text style={styles.heroMetaText}>Activación inmediata</Text>
+            </View>
+            <View style={styles.heroMetaChip}>
+              <Ionicons name="shield-checkmark-outline" size={12} color={colors.accentBright} />
+              <Text style={styles.heroMetaText}>Pago seguro</Text>
+            </View>
+          </View>
           {isWeb && (
             <View style={styles.webNote}>
               <Ionicons name="information-circle-outline" size={14} color="#92400e" />
@@ -240,7 +249,7 @@ export default function PurchaseScreen() {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionDot} />
             <Text style={styles.sectionLabel}>
-              {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige tu plan'}
+              {unusedEntitlements.length > 0 ? 'Comprar otra quiniela' : 'Planes disponibles'}
             </Text>
           </View>
 
@@ -287,9 +296,9 @@ export default function PurchaseScreen() {
                 </View>
 
                 <View style={styles.planFeatures}>
-                  <PlanFeature text="72 partidos del mundial" gold={isPopular} />
-                  <PlanFeature text="Tabla de posiciones en vivo" gold={isPopular} />
-                  <PlanFeature text="Link de invitación reutilizable" gold={isPopular} />
+                  <PlanFeature text="Todos los partidos del mundial" gold={isPopular} />
+                  <PlanFeature text="Tabla en vivo con ranking" gold={isPopular} />
+                  <PlanFeature text="Invita y gestiona participantes" gold={isPopular} />
                 </View>
 
                 <Button
@@ -311,23 +320,17 @@ export default function PurchaseScreen() {
           })}
         </View>
 
-        {/* Contact card */}
+        {/* Payments note */}
         <View style={styles.contactCard}>
           <View style={styles.contactRow}>
             <View style={styles.contactIconWrap}>
-              <Ionicons name="mail-outline" size={22} color={colors.navyMid} />
+              <Ionicons name="receipt-outline" size={22} color={colors.navyMid} />
             </View>
             <View style={styles.contactInfo}>
-              <Text style={styles.contactTitle}>+100 participantes</Text>
-              <Text style={styles.contactSub}>¿Necesitas un grupo más grande? Contáctanos.</Text>
+              <Text style={styles.contactTitle}>Tu compra queda ligada a tu cuenta</Text>
+              <Text style={styles.contactSub}>Si cambias de dispositivo puedes restaurar desde esta misma pantalla.</Text>
             </View>
           </View>
-          <Button
-            title="Contáctanos"
-            variant="outline"
-            onPress={() => {}}
-            style={{ marginTop: spacing.md }}
-          />
         </View>
 
         {!isWeb && (
@@ -467,6 +470,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
     lineHeight: 20,
+  },
+  heroMetaRow: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  heroMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(232,197,71,0.35)',
+    backgroundColor: 'rgba(13,27,42,0.24)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  heroMetaText: {
+    ...typography.tiny,
+    color: colors.accentLight,
+    fontWeight: '700',
   },
   webNote: {
     flexDirection: 'row',

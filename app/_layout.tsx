@@ -4,6 +4,14 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
+import { useFonts } from 'expo-font';
+import {
+  BarlowCondensed_500Medium,
+  BarlowCondensed_600SemiBold,
+  BarlowCondensed_700Bold,
+  BarlowCondensed_800ExtraBold,
+  BarlowCondensed_900Black,
+} from '@expo-google-fonts/barlow-condensed';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,6 +34,13 @@ if (Platform.OS !== 'web') {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    BarlowCondensed_500Medium,
+    BarlowCondensed_600SemiBold,
+    BarlowCondensed_700Bold,
+    BarlowCondensed_800ExtraBold,
+    BarlowCondensed_900Black,
+  });
   const { user } = useAuth();
   const setSession = useAuthStore((state) => state.setSession);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -113,12 +128,12 @@ export default function RootLayout() {
 
   // Hide splash (native only)
   useEffect(() => {
-    if (Platform.OS !== 'web' && isAuthReady) {
+    if (Platform.OS !== 'web' && isAuthReady && fontsLoaded) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [isAuthReady]);
+  }, [isAuthReady, fontsLoaded]);
 
-  if (!isAuthReady) return null;
+  if (!isAuthReady || !fontsLoaded) return null;
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -7,9 +7,9 @@ import { supabase } from '@/lib/supabase';
 import { colors, shadows } from '@/components/ui/theme';
 import { TEST_MODE } from '@/lib/testMode';
 
-const TAB_BG = '#081522';
-const TAB_ACT = '#F1C75B';
-const TAB_INACT = 'rgba(223,235,255,0.56)';
+const TAB_BG = '#FFFFFF';
+const TAB_ACT = colors.primaryDark;
+const TAB_INACT = '#8EA098';
 const HDR_BG = colors.primaryDark;
 
 const HEADER_META: Record<string, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
@@ -69,6 +69,7 @@ export default function AppLayout() {
         };
 
         return {
+        headerShown: false,
         headerStyle: {
           backgroundColor: HDR_BG,
           borderBottomWidth: 0,
@@ -103,11 +104,12 @@ export default function AppLayout() {
         tabBarInactiveTintColor: TAB_INACT,
         tabBarStyle: {
           backgroundColor: TAB_BG,
-          borderTopWidth: 0,
+          borderTopWidth: 1,
+          borderTopColor: '#E6ECE8',
           height: 78,
-          paddingBottom: 12,
-          paddingTop: 10,
-          ...shadows.lg,
+          paddingBottom: 10,
+          paddingTop: 8,
+          ...shadows.sm,
         },
         tabBarLabelStyle: {
           fontSize: 10,
@@ -283,6 +285,6 @@ const styles = StyleSheet.create({
     width: 34,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(241,199,91,0.18)',
+    backgroundColor: 'rgba(10,107,53,0.12)',
   },
 });

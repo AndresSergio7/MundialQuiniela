@@ -5,7 +5,9 @@ import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { fetchAllMatches } from '@/services/matches.service';
 import { fetchUserPredictions } from '@/services/predictions.service';
+import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
+import { getCountryFlagFallback } from '@/lib/flags';
 import type { Match } from '@/types';
 
 type LiveFilter = 'live' | 'today';
@@ -57,6 +59,7 @@ export default function LiveScreen() {
 
   return (
     <View style={styles.screen}>
+      <PoolSelectorBar />
       {/* Date header */}
       <View style={styles.dateHeader}>
         <Text style={styles.dateTitle}>Hoy · {todayStr}</Text>
@@ -96,8 +99,8 @@ export default function LiveScreen() {
             : null;
           const pts = result ? getPoints(result) : null;
           const isLive = match.status === 'live';
-          const headerBg = isLive ? '#CC3434' : match.status === 'finished' ? '#8B0000' : colors.accent;
-          const statusLabel = isLive ? 'EN VIVO' : match.status === 'finished' ? 'FINALIZADO' : 'DESCANSO';
+          const headerBg = isLive ? '#DC2626' : match.status === 'finished' ? '#B91C1C' : colors.accent;
+          const statusLabel = isLive ? 'EN VIVO' : match.status === 'finished' ? 'FINAL' : 'HOY';
 
           return (
             <View style={styles.card}>
@@ -115,13 +118,19 @@ export default function LiveScreen() {
 
               <View style={styles.cardBody}>
                 <View style={styles.teamRow}>
-                  <Text style={styles.teamName}>{match.home_team}</Text>
+                  <View style={styles.teamSide}>
+                    <Text style={styles.teamFlag}>{getCountryFlagFallback(match.home_team_code)}</Text>
+                    <Text style={styles.teamName} numberOfLines={1}>{match.home_team}</Text>
+                  </View>
                   <Text style={styles.score}>
                     {match.home_score != null ? match.home_score : '·'}
                     {' · '}
                     {match.away_score != null ? match.away_score : '·'}
                   </Text>
-                  <Text style={[styles.teamName, { textAlign: 'right' }]}>{match.away_team}</Text>
+                  <View style={[styles.teamSide, styles.teamSideRight]}>
+                    <Text style={[styles.teamName, styles.teamNameRight]} numberOfLines={1}>{match.away_team}</Text>
+                    <Text style={styles.teamFlag}>{getCountryFlagFallback(match.away_team_code)}</Text>
+                  </View>
                 </View>
 
                 {pred != null && (
@@ -180,7 +189,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   dateHeader: {
     backgroundColor: colors.primaryDark,
-    paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.lg,
   },
   dateTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 2 },
   dateSub: { fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
@@ -216,8 +225,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  teamName: { flex: 1, fontSize: 15, fontWeight: '800', color: colors.text },
-  score: { fontSize: 22, fontWeight: '900', color: colors.primaryDark, textAlign: 'center', minWidth: 80 },
+  teamSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  teamSideRight: { justifyContent: 'flex-end' },
+  teamFlag: { fontSize: 22 },
+  teamName: { fontSize: 15, fontWeight: '800', color: colors.text, flexShrink: 1 },
+  teamNameRight: { textAlign: 'right' },
+  score: { fontSize: 24, fontWeight: '900', color: colors.primaryDark, textAlign: 'center', minWidth: 84 },
   predRow: { borderRadius: radius.md, padding: spacing.sm, gap: 4, borderWidth: 1 },
   predNeutral: { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
   predExact: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' },

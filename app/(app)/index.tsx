@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
@@ -21,7 +22,7 @@ import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { getStandingsWithAllMembers } from '@/services/standings.service';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
-import type { Entitlement, Match, Pool, Profile, Standing, Submission } from '@/types';
+import type { Entitlement, Pool, Profile, Standing, Submission, Match } from '@/types';
 import { supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
@@ -39,18 +40,23 @@ export default function HomeScreen() {
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [todayMatches, setTodayMatches] = useState<Match[]>([]);
   const [showPoolPicker, setShowPoolPicker] = useState(false);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [userStanding, setUserStanding] = useState<Standing | null>(null);
+  const [todayMatches, setTodayMatches] = useState<Match[]>([]);
 
   const fetchPools = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const nextPools = await listMyPools(user.id);
     setPools(nextPools);
+    if (nextPools.length === 0) {
+      setCurrentPool(null);
+    } else if (!currentPool || !nextPools.some((p) => p.id === currentPool.id)) {
+      setCurrentPool(nextPools[0]);
+    }
     setLoading(false);
-  }, [user, setPools]);
+  }, [user, setPools, currentPool, setCurrentPool]);
 
   const fetchStandings = useCallback(async () => {
     if (!currentPool || !user) return;
@@ -58,6 +64,15 @@ export default function HomeScreen() {
     setStandings(data);
     setUserStanding(data.find(s => s.user_id === user.id) ?? null);
   }, [currentPool?.id, user?.id]);
+
+  const handlePoolSelect = useCallback(async (pool: Pool) => {
+    setCurrentPool(pool);
+    setShowPoolPicker(false);
+    if (!user) return;
+    const data = await getStandingsWithAllMembers(pool.id);
+    setStandings(data);
+    setUserStanding(data.find(s => s.user_id === user.id) ?? null);
+  }, [setCurrentPool, user]);
 
   useFocusEffect(
     useCallback(() => {
@@ -94,7 +109,7 @@ export default function HomeScreen() {
       const todays = all.filter(
         m => m.match_date.slice(0, 10) === todayStr || m.status === 'live',
       );
-      setTodayMatches(todays);
+      setTodayMatches(todays.slice(0, 5));
     });
     return () => { cancelled = true; };
   }, []);
@@ -165,6 +180,7 @@ export default function HomeScreen() {
     : currentSub
       ? Math.max(0, totalMatches - (currentSub.validation_errors?.length ?? 0))
       : 0;
+  const remainingPredictions = Math.max(0, totalMatches - filledCount);
 
   return (
     <ScrollView
@@ -179,77 +195,42 @@ export default function HomeScreen() {
           <View style={styles.heroBall3} />
         </View>
         <View style={styles.heroTopRow}>
-          <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>FIFA WORLD CUP 2026</Text>
-          </View>
-          <View style={styles.heroCountdownPill}>
-            <Ionicons name="time-outline" size={14} color={colors.accentBright} />
-            <Text style={styles.heroCountdownText}>
-              {daysLeft > 0 ? `${daysLeft} días` : 'En juego'}
-            </Text>
+          {profile && (
+            <View style={styles.heroGreeting}>
+              <Text style={styles.heroGreetingHola}>Hola,</Text>
+              <Text style={styles.heroGreetingName} numberOfLines={1}>{profile.username}</Text>
+            </View>
+          )}
+          <View style={styles.heroActions}>
+            <TouchableOpacity style={styles.heroIconBtn}>
+              <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={styles.heroAvatarBtn}>
+              <Text style={styles.heroAvatarText}>
+                {(profile?.username?.[0] ?? 'A').toUpperCase()}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {profile && (
-          <View style={styles.heroGreeting}>
-            <Text style={styles.heroGreetingHola}>Hola,</Text>
-            <Text style={styles.heroGreetingName}>{profile.username}</Text>
-          </View>
-        )}
-
-        <View style={styles.heroStatsRow}>
-          <View style={styles.heroStatChip}>
-            <Text style={styles.heroStatValue}>{totalPools}</Text>
-            <Text style={styles.heroStatLabel}>Quinielas</Text>
-          </View>
-          <View style={styles.heroStatChip}>
-            <Text style={styles.heroStatValue}>{submittedPools}</Text>
-            <Text style={styles.heroStatLabel}>Listas</Text>
-          </View>
-          <View style={styles.heroStatChip}>
-            <Text style={styles.heroStatValue}>{finalPools}</Text>
-            <Text style={styles.heroStatLabel}>Cerradas</Text>
+        <View style={styles.heroSelectorRow}>
+          <TouchableOpacity
+            style={styles.heroPoolChip}
+            onPress={() => setShowPoolPicker(true)}
+            activeOpacity={0.82}
+          >
+            <View style={styles.heroPoolDot} />
+            <Text style={styles.heroPoolText} numberOfLines={1}>
+              {currentPool?.name ?? 'Sin quiniela'}
+            </Text>
+            <Ionicons name="chevron-down" size={13} color="rgba(255,255,255,0.75)" />
+          </TouchableOpacity>
+          <View style={styles.heroCountdownPill}>
+            <View style={styles.heroPoolDot} />
+            <Text style={styles.heroCountdownText}>{daysLeft > 0 ? `${daysLeft} DÍAS` : 'EN JUEGO'}</Text>
           </View>
         </View>
       </View>
-
-      {/* ── Pool selector banner ── */}
-      {pools.length > 0 && (
-        <TouchableOpacity
-          style={styles.poolBanner}
-          onPress={() => pools.length > 1 && setShowPoolPicker(true)}
-          activeOpacity={pools.length > 1 ? 0.82 : 1}
-        >
-          <View style={styles.poolBannerLeft}>
-            <View style={styles.poolBannerCrest}>
-              <Ionicons name="trophy" size={14} color={colors.primary} />
-            </View>
-            <View>
-              <Text style={styles.poolBannerLabel}>LIGA ACTIVA</Text>
-              <Text style={styles.poolBannerName} numberOfLines={1}>
-                {currentPool?.name ?? 'Selecciona una quiniela'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.poolBannerRight}>
-            <Text style={styles.poolBannerDays}>
-              {daysLeft > 0 ? `${daysLeft} DÍAS` : 'EN JUEGO'}
-            </Text>
-            {pools.length > 1 && (
-              <Ionicons name="chevron-down" size={14} color={colors.accent} />
-            )}
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Access banner ── */}
-      {!hasAccess && (
-        <TouchableOpacity style={styles.accessBanner} onPress={() => router.push('/(app)/purchase')}>
-          <Ionicons name="lock-open" size={18} color={colors.navy} />
-          <Text style={styles.accessText}>Compra tu quiniela y participa</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.navy} />
-        </TouchableOpacity>
-      )}
 
       {/* ── Liga Activa card ── */}
       {currentPool && (
@@ -265,38 +246,52 @@ export default function HomeScreen() {
             <Text style={styles.ligaCardFraction}>{filledCount}/{totalMatches}</Text>
           </View>
           <View style={styles.ligaProgressTrack}>
-            <View style={[styles.ligaProgressFill, { width: `${(filledCount / totalMatches) * 100}%` as any }]} />
+            {(filledCount / totalMatches) * 100 > 0 && (
+              <LinearGradient
+                colors={['#16A34A', '#FBBF24']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.ligaProgressFill, { width: `${(filledCount / totalMatches) * 100}%` as any }]}
+              />
+            )}
           </View>
-          {filledCount < totalMatches && (
-            <View style={styles.ligaWarningRow}>
-              <Ionicons name="flame-outline" size={13} color={colors.warning} />
-              <Text style={styles.ligaWarningText}>Te faltan {totalMatches - filledCount} partidos</Text>
-            </View>
-          )}
+          <View style={styles.ligaWarningRow}>
+            <Ionicons
+              name={filledCount >= totalMatches ? 'checkmark-circle' : 'information-circle'}
+              size={13}
+              color={colors.warning}
+            />
+            <Text style={styles.ligaWarningText}>
+              {filledCount >= totalMatches ? 'Quiniela completa' : 'Quiniela en progreso'}
+            </Text>
+          </View>
         </View>
       )}
 
       {/* ── TU POSICIÓN ── */}
-      {userStanding && (
+      {currentPool && (
         <View style={styles.positionCard}>
           <View style={styles.positionGlow} />
-          <View style={styles.positionHeader}>
-            <Ionicons name="flame" size={14} color={colors.accentBright} />
-            <Text style={styles.positionTitle}>TU POSICIÓN</Text>
+          <View style={styles.positionHeaderTop}>
+            <View style={styles.positionHeader}>
+              <Ionicons name="flame" size={14} color={colors.accentBright} />
+              <Text style={styles.positionTitle}>TU POSICIÓN</Text>
+            </View>
           </View>
           <View style={styles.positionBody}>
             <View style={styles.positionLeft}>
-              <Text style={styles.positionRank}>#{userStanding.rank ?? '—'}</Text>
+              <Text style={styles.positionRank}>#{userStanding?.rank ?? '—'}</Text>
             </View>
             <View style={styles.positionMid}>
               <Text style={styles.positionName}>Tú</Text>
               <Text style={styles.positionMeta}>
-                {userStanding.exact_scores} exactos · {standings.length > 0 && userStanding.rank != null ? Math.round(((standings.length - (userStanding.rank - 1)) / standings.length) * 100) : 0}% precisión
+                {userStanding?.exact_scores ?? 0} exactos · {standings.length > 0 && userStanding?.rank != null ? Math.round(((standings.length - (userStanding.rank - 1)) / standings.length) * 100) : 0}% precisión
               </Text>
             </View>
-            <Text style={styles.positionPts}>{userStanding.total_points}</Text>
+            <Text style={styles.positionPts}>{userStanding?.total_points ?? 0}</Text>
           </View>
           {(() => {
+            if (!userStanding?.rank) return null;
             const above = standings.find(s => s.rank === (userStanding.rank ?? 0) - 1);
             const below = standings.find(s => s.rank === (userStanding.rank ?? 0) + 1);
             const diffAbove = above ? above.total_points - userStanding.total_points : null;
@@ -320,38 +315,47 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── EN VIVO AHORA ── */}
+      <View style={styles.primaryCtaWrap}>
+        <TouchableOpacity
+          style={styles.primaryCta}
+          onPress={() => hasAccess ? router.push('/(app)/predictions') : router.push('/(app)/purchase')}
+        >
+          {!hasAccess && <Ionicons name="lock-closed" size={16} color={colors.navy} />}
+          <Text style={styles.primaryCtaText}>
+            {hasAccess ? (remainingPredictions > 0 ? `Completar ${remainingPredictions} predicciones` : 'Ver predicciones') : 'Compra tu quiniela y participa'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.navy} />
+        </TouchableOpacity>
+      </View>
+
       {todayMatches.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <View style={styles.liveDot} />
-              <Text style={styles.sectionTitle}>En Vivo Ahora</Text>
+              <Text style={styles.sectionTitle}>EN VIVO AHORA</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/(app)/live')}>
               <Text style={styles.seeAll}>Ver todos</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: spacing.md }}>
-            {todayMatches.map(match => {
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveRow}>
+            {todayMatches.slice(0, 4).map(match => {
               const isLive = match.status === 'live';
               return (
                 <View key={match.id} style={styles.liveCard}>
-                  {isLive && (
-                    <View style={styles.liveCardHeader}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.liveCardMin}>EN VIVO</Text>
-                    </View>
-                  )}
-                  <Text style={styles.liveCardTeam}>{match.home_team_code}</Text>
-                  <Text style={styles.liveCardScore}>
-                    {isLive && match.home_score != null ? `${match.home_score}` : '—'}
-                  </Text>
-                  <Text style={styles.liveCardVs}>vs</Text>
-                  <Text style={styles.liveCardScore}>
-                    {isLive && match.away_score != null ? `${match.away_score}` : '—'}
-                  </Text>
-                  <Text style={styles.liveCardTeam}>{match.away_team_code}</Text>
+                  <View style={styles.liveCardHeader}>
+                    <View style={styles.liveDotSoft} />
+                    <Text style={styles.liveCardMin}>{isLive ? 'EN VIVO' : 'HOY'}</Text>
+                  </View>
+                  <View style={styles.liveLine}>
+                    <Text style={styles.liveCardTeam}>{match.home_team}</Text>
+                    <Text style={styles.liveCardScore}>{isLive && match.home_score != null ? `${match.home_score}` : '—'}</Text>
+                  </View>
+                  <View style={styles.liveLine}>
+                    <Text style={styles.liveCardTeam}>{match.away_team}</Text>
+                    <Text style={styles.liveCardScore}>{isLive && match.away_score != null ? `${match.away_score}` : '—'}</Text>
+                  </View>
                 </View>
               );
             })}
@@ -368,7 +372,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={pool.id}
                 style={[styles.pickerRow, currentPool?.id === pool.id && styles.pickerRowActive]}
-                onPress={() => { setCurrentPool(pool); setShowPoolPicker(false); fetchStandings(); }}
+                onPress={() => { handlePoolSelect(pool); }}
               >
                 <Text style={[styles.pickerRowName, currentPool?.id === pool.id && styles.pickerRowNameActive]}>
                   {pool.name}
@@ -448,7 +452,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryDark,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xxl + spacing.lg,
+    paddingBottom: spacing.xxl + spacing.xl,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -472,70 +476,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(201,168,76,0.18)',
-    borderWidth: 1, borderColor: 'rgba(201,168,76,0.4)',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heroIconBtn: {
+    width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
   },
-  heroBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent, letterSpacing: 1 },
-  heroCountdownPill: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
-    borderRadius: radius.full, borderWidth: 1,
-    borderColor: 'rgba(232,197,71,0.4)',
-    backgroundColor: 'rgba(13,27,42,0.25)',
-  },
-  heroCountdownText: { fontSize: 11, color: colors.accentBright, fontWeight: '800' },
-  heroGreeting: {
-    flexDirection: 'row', alignItems: 'baseline', gap: 6,
-    marginBottom: spacing.md,
-  },
-  heroGreetingHola: { fontSize: 22, fontWeight: '400', color: 'rgba(255,255,255,0.8)' },
-  heroGreetingName: { fontSize: 28, fontWeight: '900', color: '#fff' },
-  heroStatsRow: { flexDirection: 'row', gap: spacing.sm },
-  heroStatChip: {
-    flex: 1, borderRadius: radius.lg, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    backgroundColor: 'rgba(255,255,255,0.11)',
-    paddingVertical: spacing.sm, alignItems: 'center', overflow: 'hidden',
-  },
-  heroStatValue: { fontSize: 18, fontWeight: '900', color: '#fff' },
-  heroStatLabel: { fontSize: 10, color: '#D9E6F5', fontWeight: '700', letterSpacing: 0.6 },
-
-  // Pool banner
-  poolBanner: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginHorizontal: spacing.md, marginTop: -spacing.lg, marginBottom: spacing.sm,
-    backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.md,
-    borderWidth: 1, borderColor: colors.border, ...shadows.md,
-  },
-  poolBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-  poolBannerCrest: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#EAF6EE', borderWidth: 1, borderColor: 'rgba(10,107,53,0.24)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  poolBannerLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1 },
-  poolBannerName: { fontSize: 15, fontWeight: '900', color: colors.text },
-  poolBannerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  poolBannerDays: { fontSize: 11, fontWeight: '800', color: colors.accent },
-
-  // Access banner
-  accessBanner: {
-    flexDirection: 'row', alignItems: 'center',
+  heroAvatarBtn: {
+    width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.accent,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
-    gap: spacing.sm,
-    marginHorizontal: spacing.md, marginBottom: spacing.sm,
-    borderRadius: radius.lg, ...shadows.md,
   },
-  accessText: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.navy },
+  heroAvatarText: { fontSize: 16, fontWeight: '900', color: colors.navy },
+  heroSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  heroPoolChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1,
+    borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 3,
+    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
+  },
+  heroPoolDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
+  heroPoolText: { fontSize: 13, fontWeight: '800', color: '#fff', flexShrink: 1, fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.2 },
+  heroCountdownPill: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs, alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 3,
+    borderRadius: radius.full, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  heroCountdownText: { fontSize: 13, color: '#fff', fontWeight: '800', fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.3 },
+  heroGreeting: {
+    maxWidth: '72%',
+  },
+  heroGreetingHola: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.75)', fontFamily: 'BarlowCondensed_600SemiBold' },
+  heroGreetingName: { fontSize: 32, fontWeight: '900', color: '#fff', lineHeight: 34, maxWidth: '100%', fontFamily: 'BarlowCondensed_900Black', letterSpacing: 0.2 },
 
   // Liga card
   ligaCard: {
-    marginHorizontal: spacing.md, marginBottom: spacing.md,
+    marginHorizontal: spacing.md, marginTop: -spacing.xxl + 6, marginBottom: spacing.md,
     backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.md,
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
@@ -546,13 +521,13 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   ligaCardInfo: { flex: 1 },
-  ligaCardLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1 },
-  ligaCardName: { fontSize: 15, fontWeight: '900', color: colors.text },
-  ligaCardFraction: { fontSize: 16, fontWeight: '900', color: colors.primary },
-  ligaProgressTrack: { height: 6, backgroundColor: colors.borderLight, borderRadius: radius.full, overflow: 'hidden' },
-  ligaProgressFill: { height: 6, backgroundColor: colors.primary, borderRadius: radius.full },
-  ligaWarningRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs },
-  ligaWarningText: { fontSize: 12, fontWeight: '600', color: colors.warning },
+  ligaCardLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1, fontFamily: 'BarlowCondensed_600SemiBold' },
+  ligaCardName: { fontSize: 17, fontWeight: '900', color: colors.text, fontFamily: 'BarlowCondensed_800ExtraBold', lineHeight: 19 },
+  ligaCardFraction: { fontSize: 18, fontWeight: '900', color: colors.primary, fontFamily: 'BarlowCondensed_800ExtraBold', lineHeight: 20 },
+  ligaProgressTrack: { height: 4, backgroundColor: colors.borderLight, borderRadius: radius.full, overflow: 'hidden', marginTop: spacing.xs },
+  ligaProgressFill: { height: 4, backgroundColor: colors.primary, borderRadius: radius.full },
+  ligaWarningRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, backgroundColor: '#F7F2E7', borderRadius: radius.md, padding: spacing.xs },
+  ligaWarningText: { fontSize: 12, fontWeight: '700', color: '#9A7207', fontFamily: 'BarlowCondensed_700Bold' },
 
   // TU POSICIÓN
   positionCard: {
@@ -564,50 +539,75 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 160, height: 160, borderRadius: 80,
     backgroundColor: 'rgba(201,168,76,0.15)', top: -60, right: -40,
   },
-  positionHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.sm },
-  positionTitle: { fontSize: 10, fontWeight: '800', color: colors.accentBright, letterSpacing: 1 },
+  positionHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+    gap: spacing.sm,
+  },
+  positionHeader: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  positionTitle: { fontSize: 10, fontWeight: '800', color: colors.accentBright, letterSpacing: 1, fontFamily: 'BarlowCondensed_700Bold' },
   positionBody: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   positionLeft: { minWidth: 64, alignItems: 'center' },
-  positionRank: { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+  positionRank: { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: -1, fontFamily: 'BarlowCondensed_900Black' },
   positionMid: { flex: 1, paddingHorizontal: spacing.sm },
-  positionName: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  positionName: { fontSize: 16, fontWeight: '800', color: '#fff', fontFamily: 'BarlowCondensed_800ExtraBold' },
   positionMeta: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
-  positionPts: { fontSize: 28, fontWeight: '900', color: colors.accentBright },
+  positionPts: { fontSize: 28, fontWeight: '900', color: colors.accentBright, fontFamily: 'BarlowCondensed_900Black' },
   positionGap: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)', paddingTop: spacing.xs,
     marginBottom: spacing.xs,
   },
-  positionGapText: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
+  positionGapText: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600', fontFamily: 'BarlowCondensed_600SemiBold' },
   positionCta: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
     backgroundColor: colors.accent, paddingHorizontal: spacing.sm, paddingVertical: 5,
     borderRadius: radius.full,
   },
-  positionCtaText: { fontSize: 11, fontWeight: '800', color: colors.navy },
-
-  // Section
-  section: { padding: spacing.md },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: spacing.md,
+  positionCtaText: { fontSize: 11, fontWeight: '800', color: colors.navy, fontFamily: 'BarlowCondensed_700Bold' },
+  primaryCtaWrap: { paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  primaryCta: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    ...shadows.md,
   },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
-  seeAll: { fontSize: 13, fontWeight: '700', color: colors.primary },
-  liveDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#CC3434' },
-
-  // Live cards
+  primaryCtaText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.navy,
+    letterSpacing: 0.2,
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  section: { paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
+  sectionTitle: { fontSize: 20, fontWeight: '900', color: colors.text, letterSpacing: 0.4, fontFamily: 'BarlowCondensed_800ExtraBold' },
+  seeAll: { fontSize: 13, fontWeight: '800', color: colors.primaryDark, fontFamily: 'BarlowCondensed_700Bold' },
+  liveRow: { gap: spacing.sm, paddingBottom: spacing.xs },
   liveCard: {
-    width: 130, backgroundColor: colors.surface, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.sm,
-    alignItems: 'center', ...shadows.sm,
+    width: 210,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm + 2,
+    ...shadows.sm,
   },
-  liveCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  liveCardMin: { fontSize: 10, fontWeight: '800', color: '#CC3434' },
-  liveCardTeam: { fontSize: 12, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5 },
-  liveCardScore: { fontSize: 22, fontWeight: '900', color: colors.primaryDark },
-  liveCardVs: { fontSize: 10, color: colors.textMuted, fontWeight: '600' },
+  liveCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs + 2 },
+  liveDotSoft: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#F87171' },
+  liveCardMin: { fontSize: 10, fontWeight: '900', color: '#DC2626', letterSpacing: 0.5, fontFamily: 'BarlowCondensed_700Bold' },
+  liveLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
+  liveCardTeam: { fontSize: 14, fontWeight: '800', color: colors.text, fontFamily: 'BarlowCondensed_600SemiBold' },
+  liveCardScore: { fontSize: 16, fontWeight: '900', color: colors.text, fontFamily: 'BarlowCondensed_900Black' },
 
   // Pool picker
   pickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
