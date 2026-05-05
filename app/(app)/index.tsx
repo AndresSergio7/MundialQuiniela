@@ -7,22 +7,22 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
-import { supabase } from '@/lib/supabase';
 import { usePoolStore } from '@/store/pool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
 import { deletePoolByUser, leavePool, listMyPools } from '@/services/pools.service';
 import { joinViaInvite } from '@/services/invites.service';
 import { getSubmissionsForPools } from '@/services/predictions.service';
+import { fetchAllMatches } from '@/services/matches.service';
 import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
+import { getStandingsWithAllMembers } from '@/services/standings.service';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
-import type { Entitlement, Pool, Profile, Submission } from '@/types';
+import { colors, spacing, radius, shadows } from '@/components/ui/theme';
+import type { Entitlement, Match, Pool, Profile, Standing, Submission } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -39,6 +39,10 @@ export default function HomeScreen() {
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [todayMatches, setTodayMatches] = useState<Match[]>([]);
+  const [showPoolPicker, setShowPoolPicker] = useState(false);
+  const [standings, setStandings] = useState<Standing[]>([]);
+  const [userStanding, setUserStanding] = useState<Standing | null>(null);
 
   const fetchPools = useCallback(async () => {
     if (!user) return;
@@ -47,6 +51,13 @@ export default function HomeScreen() {
     setPools(nextPools);
     setLoading(false);
   }, [user, setPools]);
+
+  const fetchStandings = useCallback(async () => {
+    if (!currentPool || !user) return;
+    const data = await getStandingsWithAllMembers(currentPool.id);
+    setStandings(data);
+    setUserStanding(data.find(s => s.user_id === user.id) ?? null);
+  }, [currentPool?.id, user?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -76,14 +87,27 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    fetchAllMatches().then(all => {
+      if (cancelled) return;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todays = all.filter(
+        m => m.match_date.slice(0, 10) === todayStr || m.status === 'live',
+      );
+      setTodayMatches(todays);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { fetchStandings(); }, [fetchStandings]);
+
+  useEffect(() => {
     if (!user) {
       setProfile(null);
       setEntitlement(null);
       return;
     }
-
     let cancelled = false;
-
     Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase
@@ -100,25 +124,8 @@ export default function HomeScreen() {
       setProfile((profileRes.data as Profile | null) ?? null);
       setEntitlement((entitlementRes.data as Entitlement | null) ?? null);
     });
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [user]);
-
-  function openCreateModal() {
-    router.push('/(app)/purchase');
-  }
-
-  function handleSelectPool(pool: Pool) {
-    setCurrentPool(pool);
-    router.push('/(app)/predictions');
-  }
-
-  function handleTrashPress(pool: Pool) {
-    setDeleteError(null);
-    setConfirmPool(pool);
-  }
 
   async function handleConfirmDelete() {
     if (!confirmPool || !user) return;
@@ -151,6 +158,13 @@ export default function HomeScreen() {
   const submittedPools = Object.values(submissions).filter((s) => s?.is_valid).length;
   const finalPools = Object.values(submissions).filter((s) => s?.is_final).length;
 
+  const totalMatches = 36;
+  const currentSub = currentPool ? submissions[currentPool.id] : null;
+  const filledCount = currentSub?.is_valid
+    ? totalMatches
+    : currentSub
+      ? Math.max(0, totalMatches - (currentSub.validation_errors?.length ?? 0))
+      : 0;
 
   return (
     <ScrollView
@@ -178,8 +192,8 @@ export default function HomeScreen() {
 
         {profile && (
           <View style={styles.heroGreeting}>
-            <Ionicons name="person-circle" size={16} color={colors.accent} />
-            <Text style={styles.heroGreetingText}>Hola, {profile.username}</Text>
+            <Text style={styles.heroGreetingHola}>Hola,</Text>
+            <Text style={styles.heroGreetingName}>{profile.username}</Text>
           </View>
         )}
 
@@ -199,6 +213,35 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* ── Pool selector banner ── */}
+      {pools.length > 0 && (
+        <TouchableOpacity
+          style={styles.poolBanner}
+          onPress={() => pools.length > 1 && setShowPoolPicker(true)}
+          activeOpacity={pools.length > 1 ? 0.82 : 1}
+        >
+          <View style={styles.poolBannerLeft}>
+            <View style={styles.poolBannerCrest}>
+              <Ionicons name="trophy" size={14} color={colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.poolBannerLabel}>LIGA ACTIVA</Text>
+              <Text style={styles.poolBannerName} numberOfLines={1}>
+                {currentPool?.name ?? 'Selecciona una quiniela'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.poolBannerRight}>
+            <Text style={styles.poolBannerDays}>
+              {daysLeft > 0 ? `${daysLeft} DÍAS` : 'EN JUEGO'}
+            </Text>
+            {pools.length > 1 && (
+              <Ionicons name="chevron-down" size={14} color={colors.accent} />
+            )}
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* ── Access banner ── */}
       {!hasAccess && (
         <TouchableOpacity style={styles.accessBanner} onPress={() => router.push('/(app)/purchase')}>
@@ -208,142 +251,132 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* ── My Pools ── */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Ionicons name="layers" size={16} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Tus Quinielas Activas</Text>
+      {/* ── Liga Activa card ── */}
+      {currentPool && (
+        <View style={styles.ligaCard}>
+          <View style={styles.ligaCardRow}>
+            <View style={styles.ligaCardCrest}>
+              <Ionicons name="football-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.ligaCardInfo}>
+              <Text style={styles.ligaCardLabel}>LIGA ACTIVA</Text>
+              <Text style={styles.ligaCardName}>{currentPool.name}</Text>
+            </View>
+            <Text style={styles.ligaCardFraction}>{filledCount}/{totalMatches}</Text>
           </View>
-          <TouchableOpacity style={styles.newBtn} onPress={openCreateModal}>
-            <Ionicons name="add" size={14} color="#fff" />
-            <Text style={styles.newBtnText}>Nueva</Text>
+          <View style={styles.ligaProgressTrack}>
+            <View style={[styles.ligaProgressFill, { width: `${(filledCount / totalMatches) * 100}%` as any }]} />
+          </View>
+          {filledCount < totalMatches && (
+            <View style={styles.ligaWarningRow}>
+              <Ionicons name="flame-outline" size={13} color={colors.warning} />
+              <Text style={styles.ligaWarningText}>Te faltan {totalMatches - filledCount} partidos</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── TU POSICIÓN ── */}
+      {userStanding && (
+        <View style={styles.positionCard}>
+          <View style={styles.positionGlow} />
+          <View style={styles.positionHeader}>
+            <Ionicons name="flame" size={14} color={colors.accentBright} />
+            <Text style={styles.positionTitle}>TU POSICIÓN</Text>
+          </View>
+          <View style={styles.positionBody}>
+            <View style={styles.positionLeft}>
+              <Text style={styles.positionRank}>#{userStanding.rank ?? '—'}</Text>
+            </View>
+            <View style={styles.positionMid}>
+              <Text style={styles.positionName}>Tú</Text>
+              <Text style={styles.positionMeta}>{userStanding.exact_scores} exactos</Text>
+            </View>
+            <Text style={styles.positionPts}>{userStanding.total_points}</Text>
+          </View>
+          {(() => {
+            const above = standings.find(s => s.rank === (userStanding.rank ?? 0) - 1);
+            const below = standings.find(s => s.rank === (userStanding.rank ?? 0) + 1);
+            const diffAbove = above ? above.total_points - userStanding.total_points : null;
+            const diffBelow = below ? userStanding.total_points - below.total_points : null;
+            if (!diffAbove && !diffBelow) return null;
+            return (
+              <View style={styles.positionGap}>
+                <Ionicons name="flame" size={12} color={colors.accentBright} />
+                <Text style={styles.positionGapText}>
+                  {diffAbove != null ? `${diffAbove} pts del #${above!.rank}` : ''}
+                  {diffAbove != null && diffBelow != null ? ' · ' : ''}
+                  {diffBelow != null ? `+${diffBelow} sobre #${below!.rank}` : ''}
+                </Text>
+              </View>
+            );
+          })()}
+          <TouchableOpacity style={styles.positionCta} onPress={() => router.push('/(app)/standings')}>
+            <Text style={styles.positionCtaText}>Ver tabla completa</Text>
+            <Ionicons name="chevron-forward" size={13} color={colors.navy} />
           </TouchableOpacity>
         </View>
+      )}
 
-        {pools.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <View style={styles.emptyIconWrap}>
-              <Ionicons name="trophy" size={42} color={colors.accent} />
+      {/* ── EN VIVO AHORA ── */}
+      {todayMatches.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <View style={styles.liveDot} />
+              <Text style={styles.sectionTitle}>En Vivo Ahora</Text>
             </View>
-            <Text style={styles.emptyTitle}>Sin quinielas aún</Text>
-            <Text style={styles.emptyBody}>
-              Crea tu quiniela, invita a tus amigos y compite por el primer lugar.
-            </Text>
-            <Button
-              title="Crear Quiniela"
-              onPress={() => router.push('/(app)/purchase')}
-              style={{ marginTop: spacing.lg }}
-              size="lg"
-            />
-          </Card>
-        ) : (
-          pools.map((pool) => {
-            const sub = submissions[pool.id];
-            const isPoolAdmin = pool.admin_id === user?.id;
-            const isFinal = sub?.is_final === true;
-            const badgeLabel = isFinal ? 'Enviada' : sub?.is_valid ? 'Lista' : sub ? 'Incompleta' : 'Pendiente';
-            const badgeStyle = isFinal
-              ? styles.badgeFinal
-              : sub?.is_valid
-              ? styles.badgeGreen
-              : styles.badgeGray;
+            <TouchableOpacity onPress={() => router.push('/(app)/live')}>
+              <Text style={styles.seeAll}>Ver todos</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: spacing.md }}>
+            {todayMatches.map(match => {
+              const isLive = match.status === 'live';
+              return (
+                <View key={match.id} style={styles.liveCard}>
+                  {isLive && (
+                    <View style={styles.liveCardHeader}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.liveCardMin}>EN VIVO</Text>
+                    </View>
+                  )}
+                  <Text style={styles.liveCardTeam}>{match.home_team_code}</Text>
+                  <Text style={styles.liveCardScore}>
+                    {isLive && match.home_score != null ? `${match.home_score}` : '—'}
+                  </Text>
+                  <Text style={styles.liveCardVs}>vs</Text>
+                  <Text style={styles.liveCardScore}>
+                    {isLive && match.away_score != null ? `${match.away_score}` : '—'}
+                  </Text>
+                  <Text style={styles.liveCardTeam}>{match.away_team_code}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
-            return (
+      {/* ── Pool picker modal ── */}
+      <Modal visible={showPoolPicker} transparent animationType="slide" onRequestClose={() => setShowPoolPicker(false)}>
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowPoolPicker(false)}>
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Selecciona tu quiniela</Text>
+            {pools.map(pool => (
               <TouchableOpacity
                 key={pool.id}
-                onPress={() => handleSelectPool(pool)}
-                activeOpacity={0.88}
+                style={[styles.pickerRow, currentPool?.id === pool.id && styles.pickerRowActive]}
+                onPress={() => { setCurrentPool(pool); setShowPoolPicker(false); fetchStandings(); }}
               >
-                <View style={[styles.poolCard, isFinal && styles.poolCardFinal]}>
-                  <View style={styles.poolGlowA} />
-                  <View style={styles.poolGlowB} />
-                  <View style={styles.poolCardContent}>
-                    <View style={styles.poolTopRow}>
-                      <View style={styles.poolLeadWrap}>
-                        <View
-                          style={[
-                            styles.poolCrest,
-                            isFinal ? styles.poolCrestFinal : styles.poolCrestOpen,
-                          ]}
-                        >
-                          <Ionicons
-                            name={isFinal ? 'shield-checkmark-outline' : 'football-outline'}
-                            size={18}
-                            color={isFinal ? colors.navy : colors.primary}
-                          />
-                        </View>
-
-                        <View style={styles.poolInfo}>
-                          <Text numberOfLines={1} style={styles.poolName}>{pool.name}</Text>
-
-                          <View style={styles.poolTagRow}>
-                            <View
-                              style={[
-                                styles.rolePill,
-                                isPoolAdmin ? styles.rolePillAdmin : styles.rolePillMember,
-                              ]}
-                            >
-                              <Ionicons
-                                name={isPoolAdmin ? 'trophy-outline' : 'person-outline'}
-                                size={12}
-                                color={isPoolAdmin ? colors.accent : colors.primary}
-                              />
-                              <Text
-                                style={[
-                                  styles.rolePillText,
-                                  isPoolAdmin ? styles.rolePillTextAdmin : styles.rolePillTextMember,
-                                ]}
-                              >
-                                {isPoolAdmin ? 'Admin' : 'Miembro'}
-                              </Text>
-                            </View>
-
-                            <View style={styles.poolSizePill}>
-                              <Ionicons name="people-outline" size={12} color={colors.textMuted} />
-                              <Text style={styles.poolSizeText}>{pool.max_members} cupos</Text>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-
-                      <View style={styles.poolTopActions}>
-                        <View style={[styles.badge, badgeStyle]}>
-                          <Text style={styles.badgeText}>{badgeLabel}</Text>
-                        </View>
-
-                        <TouchableOpacity
-                          onPress={(e) => { e.stopPropagation(); handleTrashPress(pool); }}
-                          style={styles.poolDangerBtn}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                          <Ionicons
-                            name={isPoolAdmin ? 'trash-outline' : 'exit-outline'}
-                            size={17}
-                            color={isPoolAdmin ? colors.error : colors.textMuted}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    <View style={styles.poolBottomRow}>
-                      <Text style={styles.poolHintText}>Entrar y editar marcadores</Text>
-                      <View style={styles.poolEnterCta}>
-                        <Text style={styles.poolEnterText}>Abrir</Text>
-                        <Ionicons name="chevron-forward" size={14} color={colors.primary} />
-                      </View>
-                    </View>
-
-                    {sub && sub.validation_errors?.length > 0 && (
-                      <Text style={styles.validationError}>⚠ {sub.validation_errors[0]}</Text>
-                    )}
-                  </View>
-                </View>
+                <Text style={[styles.pickerRowName, currentPool?.id === pool.id && styles.pickerRowNameActive]}>
+                  {pool.name}
+                </Text>
+                {currentPool?.id === pool.id && <Ionicons name="checkmark" size={16} color={colors.primary} />}
               </TouchableOpacity>
-            );
-          })
-        )}
-      </View>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* ── Confirm delete / leave ── */}
       <Modal
@@ -379,9 +412,7 @@ export default function HomeScreen() {
                 <Text style={styles.errorText}>{deleteError}</Text>
               </View>
             )}
-            {deleting ? (
-              <ActivityIndicator color={colors.error} style={{ marginTop: spacing.xl }} />
-            ) : (
+            {deleting ? null : (
               <View style={styles.modalButtons}>
                 <Button
                   title="Cancelar"
@@ -423,386 +454,197 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     overflow: 'hidden',
   },
-  heroBall1: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    top: -50,
-    right: -40,
-  },
   heroBall2: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 120, height: 120, borderRadius: 60,
     backgroundColor: 'rgba(201,168,76,0.08)',
-    bottom: -30,
-    left: -20,
+    bottom: -30, left: -20,
   },
   heroBall3: {
     position: 'absolute',
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.32)',
-    top: 24,
-    left: 30,
+    width: 86, height: 86, borderRadius: 43,
+    borderWidth: 1, borderColor: 'rgba(201,168,76,0.32)',
+    top: 24, left: 30,
   },
   heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.sm,
   },
   heroBadge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(201,168,76,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.4)',
+    borderWidth: 1, borderColor: 'rgba(201,168,76,0.4)',
     borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
   },
-  heroBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.accent,
-    letterSpacing: 1,
-  },
+  heroBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent, letterSpacing: 1 },
   heroCountdownPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+    borderRadius: radius.full, borderWidth: 1,
     borderColor: 'rgba(232,197,71,0.4)',
     backgroundColor: 'rgba(13,27,42,0.25)',
   },
-  heroCountdownText: {
-    fontSize: 11,
-    color: colors.accentBright,
-    fontWeight: '800',
-  },
-  heroStatsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  heroStatChip: {
-    flex: 1,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    backgroundColor: 'rgba(255,255,255,0.11)',
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  heroStatValue: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#fff',
-  },
-  heroStatLabel: {
-    fontSize: 10,
-    color: '#D9E6F5',
-    fontWeight: '700',
-    letterSpacing: 0.6,
-  },
+  heroCountdownText: { fontSize: 11, color: colors.accentBright, fontWeight: '800' },
   heroGreeting: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+    flexDirection: 'row', alignItems: 'baseline', gap: 6,
     marginBottom: spacing.md,
   },
-  heroGreetingText: {
-    fontSize: 13,
-    color: colors.accent,
-    fontWeight: '600',
+  heroGreetingHola: { fontSize: 22, fontWeight: '400', color: 'rgba(255,255,255,0.8)' },
+  heroGreetingName: { fontSize: 28, fontWeight: '900', color: '#fff' },
+  heroStatsRow: { flexDirection: 'row', gap: spacing.sm },
+  heroStatChip: {
+    flex: 1, borderRadius: radius.lg, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.11)',
+    paddingVertical: spacing.sm, alignItems: 'center', overflow: 'hidden',
   },
+  heroStatValue: { fontSize: 18, fontWeight: '900', color: '#fff' },
+  heroStatLabel: { fontSize: 10, color: '#D9E6F5', fontWeight: '700', letterSpacing: 0.6 },
+
+  // Pool banner
+  poolBanner: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginHorizontal: spacing.md, marginTop: -spacing.lg, marginBottom: spacing.sm,
+    backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border, ...shadows.md,
+  },
+  poolBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  poolBannerCrest: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#EAF6EE', borderWidth: 1, borderColor: 'rgba(10,107,53,0.24)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  poolBannerLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1 },
+  poolBannerName: { fontSize: 15, fontWeight: '900', color: colors.text },
+  poolBannerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  poolBannerDays: { fontSize: 11, fontWeight: '800', color: colors.accent },
 
   // Access banner
   accessBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.accent,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
     gap: spacing.sm,
-    marginHorizontal: spacing.md,
-    marginTop: -spacing.lg,
-    borderRadius: radius.lg,
-    ...shadows.md,
+    marginHorizontal: spacing.md, marginBottom: spacing.sm,
+    borderRadius: radius.lg, ...shadows.md,
   },
-  accessText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.navy,
+  accessText: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.navy },
+
+  // Liga card
+  ligaCard: {
+    marginHorizontal: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
+  ligaCardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  ligaCardCrest: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#EAF6EE', borderWidth: 1, borderColor: 'rgba(10,107,53,0.24)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ligaCardInfo: { flex: 1 },
+  ligaCardLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1 },
+  ligaCardName: { fontSize: 15, fontWeight: '900', color: colors.text },
+  ligaCardFraction: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  ligaProgressTrack: { height: 6, backgroundColor: colors.borderLight, borderRadius: radius.full, overflow: 'hidden' },
+  ligaProgressFill: { height: 6, backgroundColor: colors.primary, borderRadius: radius.full },
+  ligaWarningRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs },
+  ligaWarningText: { fontSize: 12, fontWeight: '600', color: colors.warning },
+
+  // TU POSICIÓN
+  positionCard: {
+    marginHorizontal: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.primaryDark, borderRadius: radius.xl, padding: spacing.md,
+    overflow: 'hidden', ...shadows.lg,
+  },
+  positionGlow: {
+    position: 'absolute', width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(201,168,76,0.15)', top: -60, right: -40,
+  },
+  positionHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.sm },
+  positionTitle: { fontSize: 10, fontWeight: '800', color: colors.accentBright, letterSpacing: 1 },
+  positionBody: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  positionLeft: { minWidth: 64, alignItems: 'center' },
+  positionRank: { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+  positionMid: { flex: 1, paddingHorizontal: spacing.sm },
+  positionName: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  positionMeta: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
+  positionPts: { fontSize: 28, fontWeight: '900', color: colors.accentBright },
+  positionGap: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)', paddingTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  positionGapText: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
+  positionCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
+    backgroundColor: colors.accent, paddingHorizontal: spacing.sm, paddingVertical: 5,
+    borderRadius: radius.full,
+  },
+  positionCtaText: { fontSize: 11, fontWeight: '800', color: colors.navy },
 
   // Section
   section: { padding: spacing.md },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.md,
   },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  newBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radius.full,
-    ...shadows.sm,
-  },
-  newBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.3,
-  },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+  seeAll: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  liveDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#CC3434' },
 
-  // Empty state
-  emptyCard: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    backgroundColor: colors.surface,
+  // Live cards
+  liveCard: {
+    width: 130, backgroundColor: colors.surface, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.sm,
+    alignItems: 'center', ...shadows.sm,
   },
-  emptyIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    borderWidth: 2,
-    borderColor: colors.accent + '50',
-  },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
-  emptyBody: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: spacing.md,
-  },
+  liveCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  liveCardMin: { fontSize: 10, fontWeight: '800', color: '#CC3434' },
+  liveCardTeam: { fontSize: 12, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5 },
+  liveCardScore: { fontSize: 22, fontWeight: '900', color: colors.primaryDark },
+  liveCardVs: { fontSize: 10, color: colors.textMuted, fontWeight: '600' },
 
-  // Pool card
-  poolCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#D4E1EE',
-    ...shadows.lg,
-    position: 'relative',
+  // Pool picker
+  pickerOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  pickerSheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    padding: spacing.lg, paddingBottom: spacing.xxl,
   },
-  poolCardFinal: {
-    backgroundColor: '#FFFDF8',
+  pickerTitle: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: spacing.md },
+  pickerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
   },
-  poolGlowA: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(10,107,53,0.07)',
-    top: -95,
-    right: -55,
-  },
-  poolGlowB: {
-    position: 'absolute',
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    backgroundColor: 'rgba(201,168,76,0.14)',
-    bottom: -62,
-    left: -38,
-  },
-  poolCardContent: { padding: spacing.md, gap: spacing.sm },
-  poolTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  poolLeadWrap: { flexDirection: 'row', flex: 1, marginRight: spacing.sm },
-  poolCrest: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-    borderWidth: 1,
-  },
-  poolCrestOpen: {
-    backgroundColor: '#EAF6EE',
-    borderColor: 'rgba(10,107,53,0.24)',
-  },
-  poolCrestFinal: {
-    backgroundColor: '#FFF4CC',
-    borderColor: 'rgba(201,168,76,0.45)',
-  },
-  poolInfo: { flex: 1 },
-  poolName: { fontSize: 16, fontWeight: '900', color: colors.text },
-  poolTagRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
-  rolePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  rolePillAdmin: {
-    backgroundColor: 'rgba(201,168,76,0.16)',
-    borderColor: 'rgba(201,168,76,0.45)',
-  },
-  rolePillMember: {
-    backgroundColor: '#EAF6EE',
-    borderColor: 'rgba(10,107,53,0.24)',
-  },
-  rolePillText: { fontSize: 11, fontWeight: '800' },
-  rolePillTextAdmin: { color: '#7A5A00' },
-  rolePillTextMember: { color: colors.primary },
-  poolSizePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  poolSizeText: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
-  poolTopActions: { alignItems: 'flex-end', gap: spacing.xs },
-  badge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  badgeFinal: { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent },
-  badgeGreen: { backgroundColor: colors.successLight, borderWidth: 1, borderColor: colors.primary + '40' },
-  badgeGray:  { backgroundColor: colors.borderLight, borderWidth: 1, borderColor: colors.border },
-  badgeText: { fontSize: 11, fontWeight: '700', color: colors.text },
-  poolDangerBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  poolBottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#E6EDF5',
-    paddingTop: spacing.sm,
-  },
-  poolHintText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  poolEnterCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#EAF6EE',
-    borderWidth: 1,
-    borderColor: 'rgba(10,107,53,0.24)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-  },
-  poolEnterText: { fontSize: 11, fontWeight: '800', color: colors.primary },
-  validationError: {
-    fontSize: 11,
-    color: colors.error,
-    backgroundColor: colors.errorLight,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.error + '30',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
+  pickerRowActive: { backgroundColor: colors.successLight, borderRadius: radius.md, paddingHorizontal: spacing.sm },
+  pickerRowName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  pickerRowNameActive: { color: colors.primary },
 
   // Modal
   modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    flex: 1, backgroundColor: colors.overlay,
+    justifyContent: 'center', alignItems: 'center', padding: spacing.lg,
   },
   confirmContent: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    width: '100%',
-    maxWidth: 380,
-    alignItems: 'center',
-    ...shadows.lg,
+    backgroundColor: colors.surface, borderRadius: radius.xl,
+    padding: spacing.xl, width: '100%', maxWidth: 380,
+    alignItems: 'center', ...shadows.lg,
   },
   confirmIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: colors.errorLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md,
   },
-  confirmTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  confirmQuestion: {
-    fontSize: 15,
-    color: colors.text,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+  confirmTitle: { fontSize: 20, fontWeight: '800', color: colors.error, textAlign: 'center', marginBottom: spacing.sm },
+  confirmQuestion: { fontSize: 15, color: colors.text, textAlign: 'center', lineHeight: 22 },
   confirmPoolName: { fontWeight: '800' },
-  confirmWarning: {
-    fontSize: 13,
-    color: colors.error,
-    textAlign: 'center',
-    marginTop: spacing.xs,
-    fontWeight: '600',
-  },
+  confirmWarning: { fontSize: 13, color: colors.error, textAlign: 'center', marginTop: spacing.xs, fontWeight: '600' },
   errorBanner: {
-    backgroundColor: colors.errorLight,
-    borderWidth: 1,
-    borderColor: colors.error + '40',
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    width: '100%',
-    marginTop: spacing.md,
+    backgroundColor: colors.errorLight, borderWidth: 1,
+    borderColor: colors.error + '40', borderRadius: radius.sm,
+    padding: spacing.sm, width: '100%', marginTop: spacing.md,
   },
   errorText: { color: colors.error, fontSize: 13 },
   modalButtons: { flexDirection: 'row', marginTop: spacing.lg, width: '100%' },
