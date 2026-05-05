@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/store/auth';
 import { supabase } from '@/lib/supabase';
 import { colors, shadows } from '@/components/ui/theme';
@@ -58,7 +57,6 @@ function ProfileInitial() {
 
 
 export default function AppLayout() {
-  const { signOut } = useAuth();
   const router = useRouter();
 
   return (
