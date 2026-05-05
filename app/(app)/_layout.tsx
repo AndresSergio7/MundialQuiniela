@@ -250,14 +250,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  profileBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(201,168,76,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   headerIconBtn: {
     width: 34,
     height: 34,
