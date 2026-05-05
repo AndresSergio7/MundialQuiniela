@@ -290,7 +290,9 @@ export default function HomeScreen() {
             </View>
             <View style={styles.positionMid}>
               <Text style={styles.positionName}>Tú</Text>
-              <Text style={styles.positionMeta}>{userStanding.exact_scores} exactos</Text>
+              <Text style={styles.positionMeta}>
+                {userStanding.exact_scores} exactos · {standings.length > 0 && userStanding.rank != null ? Math.round(((standings.length - (userStanding.rank - 1)) / standings.length) * 100) : 0}% precisión
+              </Text>
             </View>
             <Text style={styles.positionPts}>{userStanding.total_points}</Text>
           </View>
