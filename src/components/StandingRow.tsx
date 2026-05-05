@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadows } from './ui/theme';
 import type { Standing } from '@/types';
+import { RankChangeIndicator } from './RankChangeIndicator';
 
 interface StandingRowProps {
   standing: Standing;
@@ -10,6 +11,7 @@ interface StandingRowProps {
   isAdmin?: boolean;
   isPaid?: boolean;
   canViewPdf?: boolean;
+  rankChange?: number;
   onPress?: () => void;
   onTogglePaid?: (isPaid: boolean) => void;
 }
@@ -26,6 +28,7 @@ export function StandingRow({
   isAdmin,
   isPaid,
   canViewPdf,
+  rankChange,
   onPress,
   onTogglePaid,
 }: StandingRowProps) {
@@ -94,9 +97,12 @@ export function StandingRow({
 
       {/* Points + PDF indicator */}
       <View style={styles.rightWrap}>
-        <View style={styles.pointsWrap}>
-          <Text style={[styles.points, isTop3 && styles.pointsTop]}>{standing.total_points}</Text>
-          <Text style={styles.ptLabel}>pts</Text>
+        <View style={[styles.pointsWrap, styles.pointsWrapFlex]}>
+          <RankChangeIndicator delta={rankChange ?? 0} />
+          <View style={styles.pointsColumn}>
+            <Text style={[styles.points, isTop3 && styles.pointsTop]}>{standing.total_points}</Text>
+            <Text style={styles.ptLabel}>pts</Text>
+          </View>
         </View>
         {canViewPdf && (
           <View style={styles.pdfChip}>
@@ -224,6 +230,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D8E5F4',
   },
+  pointsWrapFlex: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pointsColumn: { alignItems: 'flex-end' },
   points: {
     fontSize: 20,
     fontWeight: '800',
