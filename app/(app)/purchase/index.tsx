@@ -169,14 +169,19 @@ export default function PurchaseScreen() {
 
         {/* Hero header */}
         <View style={styles.hero}>
+          <View style={styles.heroGlowA} />
+          <View style={styles.heroGlowB} />
+          <Text style={styles.heroEyebrow}>MUNDIAL 2026</Text>
           <View style={styles.heroIconWrap}>
-            <Ionicons name="trophy" size={36} color={colors.accent} />
+            <Ionicons name="trophy" size={38} color={colors.accent} />
           </View>
-          <Text style={styles.heroTitle}>Crear Quiniela</Text>
+          <Text style={styles.heroTitle}>
+            {upgradePoolId ? 'Amplía tu Quiniela' : 'Crear Quiniela'}
+          </Text>
           <Text style={styles.heroSubtitle}>
             {upgradePoolId
-              ? 'Tu compra se aplicará a la quiniela desde la que viniste: más cupo para invitar.'
-              : 'Cada compra da cupo para invitar; si solo tienes una quiniela gratis, se actualiza sola. También puedes crear otra quiniela nueva.'}
+              ? 'Tu compra ampliará el cupo de tu quiniela para que puedas invitar más personas.'
+              : 'Elige un plan y empieza a jugar con tu gente. Una compra, una quiniela.'}
           </Text>
           {isWeb && (
             <View style={styles.webNote}>
@@ -235,7 +240,7 @@ export default function PurchaseScreen() {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionDot} />
             <Text style={styles.sectionLabel}>
-              {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige un plan'}
+              {unusedEntitlements.length > 0 ? 'O compra otra quiniela' : 'Elige tu plan'}
             </Text>
           </View>
 
@@ -414,15 +419,43 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xl,
     backgroundColor: colors.primaryDark,
+    overflow: 'hidden',
+  },
+  heroGlowA: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(201,168,76,0.1)',
+    top: -80,
+    right: -60,
+  },
+  heroGlowB: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    bottom: -70,
+    left: -40,
+  },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accentBright,
+    letterSpacing: 2,
+    marginBottom: spacing.sm,
   },
   heroIconWrap: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(201,168,76,0.18)',
+    backgroundColor: 'rgba(201,168,76,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
@@ -433,6 +466,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
     textAlign: 'center',
     marginTop: spacing.xs,
+    lineHeight: 20,
   },
   webNote: {
     flexDirection: 'row',
