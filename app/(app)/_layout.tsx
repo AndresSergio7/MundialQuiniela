@@ -1,8 +1,10 @@
-import { TouchableOpacity, View, Text, StyleSheet, Animated } from 'react-native';
-import { useRef, useEffect } from 'react';
+﻿import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { useState, useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthStore } from '@/store/auth';
+import { supabase } from '@/lib/supabase';
 import { colors, shadows } from '@/components/ui/theme';
 import { TEST_MODE } from '@/lib/testMode';
 
@@ -14,9 +16,9 @@ const HDR_BG = colors.primaryDark;
 const HEADER_META: Record<string, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
   index: { title: 'Inicio', subtitle: 'Tu centro de quinielas', icon: 'home' },
   'predictions/index': { title: 'Quiniela', subtitle: 'Captura tus marcadores', icon: 'football' },
-  'live/index': { title: 'En Vivo', subtitle: 'Seguimiento minuto a minuto', icon: 'radio' },
+  'live/index':    { title: 'En Vivo', subtitle: 'Partidos de hoy', icon: 'radio' },
   'standings/index': { title: 'Tabla', subtitle: 'Clasificacion en tiempo real', icon: 'podium' },
-  'invites/index': { title: 'Invitar', subtitle: 'Comparte tu liga', icon: 'person-add' },
+  'invites/index': { title: 'Liga', subtitle: 'Tu grupo', icon: 'people' },
   'purchase/index': { title: 'Comprar', subtitle: 'Planes y acceso', icon: 'card' },
   'debug/index': { title: 'Debug', subtitle: 'Herramientas tecnicas', icon: 'construct' },
   'profile/index': { title: 'Mi perfil', subtitle: 'Cuenta y metodos de pago', icon: 'person-circle' },
@@ -31,51 +33,29 @@ function TabGlyph({ icon, color, focused }: { icon: keyof typeof Ionicons.glyphM
   );
 }
 
-function LiveTabButton({ children, onPress, accessibilityState }: any) {
-  const focused = accessibilityState?.selected;
-  const pulse1 = useRef(new Animated.Value(0)).current;
-  const pulse2 = useRef(new Animated.Value(0)).current;
+function ProfileInitial() {
+  const { user } = useAuthStore();
+  const [initial, setInitial] = useState('?');
 
   useEffect(() => {
-    let active = true;
-
-    const runPulse = (anim: Animated.Value, delay: number) => {
-      const cycle = () => {
-        if (!active) return;
-        anim.setValue(0);
-        Animated.timing(anim, { toValue: 1, duration: 1600, useNativeDriver: true }).start(({ finished }) => {
-          if (finished && active) cycle();
-        });
-      };
-      setTimeout(cycle, delay);
-    };
-
-    runPulse(pulse1, 0);
-    runPulse(pulse2, 800);
-
-    return () => { active = false; };
-  }, []);
-
-  const makeRingStyle = (anim: Animated.Value) => ({
-    transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.8] }) }],
-    opacity: anim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.55, 0] }),
-  });
+    if (!user) return;
+    supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.username) setInitial(data.username[0].toUpperCase());
+      });
+  }, [user?.id]);
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      style={[styles.liveButton, focused && styles.liveButtonActive]}
-    >
-      <View style={styles.livePulseContainer}>
-        <Animated.View style={[styles.pulseRing, makeRingStyle(pulse1)]} />
-        <Animated.View style={[styles.pulseRing, makeRingStyle(pulse2)]} />
-        {children}
-      </View>
-      <Text style={styles.liveLabel}>EN VIVO</Text>
-    </TouchableOpacity>
+    <View style={styles.avatarCircle}>
+      <Text style={styles.avatarInitial}>{initial}</Text>
+    </View>
   );
 }
+
 
 export default function AppLayout() {
   const { signOut } = useAuth();
@@ -113,11 +93,11 @@ export default function AppLayout() {
         ),
         headerRight: () => (
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={styles.profileBtn}>
-              <Ionicons name="person-circle-outline" size={20} color={colors.accent} />
+            <TouchableOpacity style={styles.headerIconBtn}>
+              <Ionicons name="notifications-outline" size={20} color={colors.accent} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={signOut} style={styles.logoutBtn}>
-              <Ionicons name="log-out-outline" size={20} color={colors.accent} />
+            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={styles.avatarBtn}>
+              <ProfileInitial />
             </TouchableOpacity>
           </View>
         ),
@@ -161,12 +141,9 @@ export default function AppLayout() {
       <Tabs.Screen
         name="live/index"
         options={{
-          title: '',
-          tabBarButton: (props) => <LiveTabButton {...props} />,
-          tabBarIcon: ({ focused }) => (
-            <View style={styles.liveIconWrap}>
-              <Ionicons name={focused ? 'radio' : 'radio-outline'} size={24} color="#fff" />
-            </View>
+          title: 'En Vivo',
+          tabBarIcon: ({ color, focused }) => (
+            <TabGlyph icon="radio" color={color} focused={focused} />
           ),
         }}
       />
@@ -182,9 +159,9 @@ export default function AppLayout() {
       <Tabs.Screen
         name="invites/index"
         options={{
-          title: 'Invitar',
+          title: 'Liga',
           tabBarIcon: ({ color, focused }) => (
-            <TabGlyph icon="person-add" color={color} focused={focused} />
+            <TabGlyph icon="people" color={color} focused={focused} />
           ),
         }}
       />
@@ -283,14 +260,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoutBtn: {
+  headerIconBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(201,168,76,0.15)',
+    backgroundColor: 'rgba(201,168,76,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarBtn: { marginLeft: 6 },
+  avatarCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: { fontSize: 14, fontWeight: '800', color: colors.navy },
   tabGlyphWrap: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -307,45 +294,5 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     backgroundColor: 'rgba(241,199,91,0.18)',
-  },
-  liveButton: {
-    top: -26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 86,
-  },
-  liveButtonActive: {
-    transform: [{ scale: 1.04 }],
-  },
-  livePulseContainer: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#E53935',
-  },
-  liveIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#E53935',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    ...shadows.gold,
-  },
-  liveLabel: {
-    marginTop: 3,
-    color: '#E9EEF8',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.9,
   },
 });
