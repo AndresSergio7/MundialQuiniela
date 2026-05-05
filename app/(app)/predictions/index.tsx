@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  SectionList,
+  FlatList,
   ScrollView,
   ActivityIndicator,
   RefreshControl,
@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
+import { listMyPools } from '@/services/pools.service';
 import { fetchAllMatches } from '@/services/matches.service';
 import {
   fetchUserPredictions,
@@ -26,7 +27,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
-import type { Match, Submission, PredictionMap, Pool } from '@/types';
+import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
 type LocalScores = Record<string, { home: string; away: string }>;
 
@@ -47,8 +48,12 @@ export default function PredictionsScreen() {
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [tournamentLocked, setTournamentLocked] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'pending'>('all');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importablePools, setImportablePools] = useState<Pool[]>([]);
+  const [importing, setImporting] = useState(false);
 
   const isFinal = submission?.is_final === true;
   const isLocked = tournamentLocked;
@@ -187,77 +192,91 @@ export default function PredictionsScreen() {
     }
   }
 
-  const groupedMatches = useMemo(() => {
-    const groups: Record<string, Match[]> = {};
-    for (const m of matches) {
-      if (!groups[m.group_name]) groups[m.group_name] = [];
-      groups[m.group_name].push(m);
+  async function handleImportOpen() {
+    if (!user || !currentPool) return;
+    const allPools = await listMyPools(user.id);
+    setImportablePools(allPools.filter(p => p.id !== currentPool.id));
+    setShowImportModal(true);
+  }
+
+  async function handleImportFrom(sourcePool: Pool) {
+    if (!user || !currentPool) return;
+    setImporting(true);
+    setShowImportModal(false);
+    try {
+      const preds = await fetchUserPredictions(sourcePool.id, user.id);
+      if (preds.length === 0) {
+        setError(`"${sourcePool.name}" no tiene predicciones guardadas.`);
+        setImporting(false);
+        return;
+      }
+      const newScores: LocalScores = { ...localScores };
+      for (const p of preds) {
+        newScores[p.match_id] = { home: String(p.home_score), away: String(p.away_score) };
+      }
+      setLocalScores(newScores);
+      const predMap: PredictionMap = {};
+      for (const p of preds) {
+        predMap[p.match_id] = { home: p.home_score, away: p.away_score };
+      }
+      await savePredictionsBulk(currentPool.id, user.id, predMap);
+      setSavedOk(true);
+      setError(null);
+    } catch {
+      setError('No se pudo importar. Intenta de nuevo.');
+    } finally {
+      setImporting(false);
     }
-    return Object.entries(groups)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([title, data]) => ({ title, data }));
+  }
+
+  const groupNames = useMemo(() => {
+    const names = Array.from(new Set(matches.map(m => m.group_name))).sort();
+    return names;
+  }, [matches]);
+
+  const groupedMatchMap = useMemo(() => {
+    const map: Record<string, Match[]> = {};
+    for (const m of matches) {
+      if (!map[m.group_name]) map[m.group_name] = [];
+      map[m.group_name].push(m);
+    }
+    return map;
   }, [matches]);
 
   useEffect(() => {
-    if (groupedMatches.length === 0) return;
-
-    setCollapsedGroups(prev => {
-      const next: Record<string, boolean> = { ...prev };
-      let changed = false;
-
-      for (const [idx, group] of groupedMatches.entries()) {
-        if (next[group.title] === undefined) {
-          next[group.title] = idx !== 0;
-          changed = true;
-        }
-      }
-
-      for (const key of Object.keys(next)) {
-        if (!groupedMatches.find(g => g.title === key)) {
-          delete next[key];
-          changed = true;
-        }
-      }
-
-      return changed ? next : prev;
-    });
-  }, [groupedMatches]);
+    if (groupNames.length > 0 && activeGroup === null) {
+      setActiveGroup(groupNames[0]);
+    }
+  }, [groupNames]);
 
   const groupStats = useMemo(
-    () => groupedMatches.map(group => {
-      const filled = group.data.filter(m => {
+    () => groupNames.map(name => {
+      const ms = groupedMatchMap[name] ?? [];
+      const filled = ms.filter(m => {
         const s = localScores[m.id];
         return s?.home !== '' && s?.away !== '';
       }).length;
-
-      return {
-        title: group.title,
-        total: group.data.length,
-        filled,
-      };
+      return { title: name, total: ms.length, filled };
     }),
-    [groupedMatches, localScores],
+    [groupNames, groupedMatchMap, localScores],
   );
 
-  function toggleGroup(title: string) {
-    setCollapsedGroups(prev => ({ ...prev, [title]: !prev[title] }));
-  }
+  const visibleMatches = useMemo(() => {
+    let result = activeGroup ? (groupedMatchMap[activeGroup] ?? []) : matches;
+    if (activeFilter === 'pending') {
+      result = result.filter(m => {
+        const s = localScores[m.id];
+        return !s || s.home === '' || s.away === '';
+      });
+    }
+    return result;
+  }, [activeGroup, groupedMatchMap, matches, activeFilter, localScores]);
 
-  function expandAllGroups() {
-    setCollapsedGroups(prev => {
-      const next = { ...prev };
-      for (const g of groupedMatches) next[g.title] = false;
-      return next;
-    });
-  }
-
-  function collapseAllGroups() {
-    setCollapsedGroups(prev => {
-      const next = { ...prev };
-      for (const g of groupedMatches) next[g.title] = true;
-      return next;
-    });
-  }
+  const activeGroupComplete = useMemo(() => {
+    if (!activeGroup) return false;
+    const stat = groupStats.find(g => g.title === activeGroup);
+    return stat ? stat.filled === stat.total : false;
+  }, [activeGroup, groupStats]);
 
   const pct = matches.length > 0 ? Math.round((filledCount / matches.length) * 100) : 0;
   const showEditActions = !tournamentLocked;
@@ -271,6 +290,87 @@ export default function PredictionsScreen() {
     );
   }
 
+  const ListHeader = (
+    <View>
+      {/* Progress bar */}
+      <View style={styles.progressCard}>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressLabel}>{filledCount} / {matches.length} partidos</Text>
+          <Text style={styles.progressPct}>{pct}%</Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${pct}%` }]} />
+        </View>
+        {isFinal && (
+          <View style={[styles.submittedInlineBadge, { marginTop: spacing.xs }]}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+            <Text style={styles.submittedInlineText}>Enviada — puedes seguir editando</Text>
+          </View>
+        )}
+        {tournamentLocked && !isFinal && (
+          <View style={[styles.submittedInlineBadge, { marginTop: spacing.xs }]}>
+            <Ionicons name="shield-checkmark" size={14} color={colors.accent} />
+            <Text style={styles.submittedInlineText}>El torneo ya inició — solo lectura</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Todos / Pendientes tabs */}
+      <View style={styles.filterTabs}>
+        {(['all', 'pending'] as const).map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterTab, activeFilter === f && styles.filterTabActive]}
+            onPress={() => setActiveFilter(f)}
+          >
+            <Text style={[styles.filterTabText, activeFilter === f && styles.filterTabTextActive]}>
+              {f === 'all' ? 'Todos' : 'Pendientes'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Group chips — single select */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupChipsScroll}>
+        {groupStats.map(g => {
+          const complete = g.filled === g.total;
+          const active = activeGroup === g.title;
+          return (
+            <TouchableOpacity
+              key={g.title}
+              style={[styles.groupChip, active && styles.groupChipActive]}
+              onPress={() => setActiveGroup(g.title)}
+            >
+              {complete && <View style={styles.groupCompleteDot} />}
+              <Text style={[styles.groupChipText, active && styles.groupChipTextActive]}>{g.title}</Text>
+              <Text style={[styles.groupChipSub, active && styles.groupChipSubActive]}>{g.filled}/{g.total}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={14} color={colors.error} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+      {validationErrors.length > 0 && (
+        <View style={styles.errorBanner}>
+          {validationErrors.map((e, i) => (
+            <Text key={i} style={styles.errorText}>• {e}</Text>
+          ))}
+        </View>
+      )}
+      {savedOk && mode === 'edit' && (
+        <View style={styles.successBanner}>
+          <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+          <Text style={styles.successText}>Guardado</Text>
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <View style={styles.screen}>
       <PoolSelectorBar onPoolChange={pool => loadAll(pool)} />
@@ -280,147 +380,35 @@ export default function PredictionsScreen() {
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : (
-        <SectionList
-          sections={groupedMatches}
+        <FlatList
+          data={activeGroupComplete ? [] : visibleMatches}
           keyExtractor={m => m.id}
-          stickySectionHeadersEnabled
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={() => loadAll()} tintColor={colors.accent} />
           }
-          renderSectionHeader={({ section }) => (
-            <TouchableOpacity
-              style={styles.groupHeader}
-              activeOpacity={0.9}
-              onPress={() => toggleGroup(section.title)}
-            >
-              <View style={styles.groupHeaderLeft}>
-                <Text style={styles.groupLabel}>GRUPO {section.title}</Text>
-                <View style={styles.groupPill}>
-                  <Text style={styles.groupPillText}>
-                    {groupStats.find(g => g.title === section.title)?.filled ?? 0}/{section.data.length}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons
-                name={collapsedGroups[section.title] ? 'chevron-down' : 'chevron-up'}
-                size={16}
-                color={colors.accent}
-              />
-            </TouchableOpacity>
+          ListHeaderComponent={ListHeader}
+          renderItem={({ item: match }) => (
+            <MatchRow
+              match={match}
+              homeScore={localScores[match.id]?.home ?? ''}
+              awayScore={localScores[match.id]?.away ?? ''}
+              locked={isLocked}
+              onHomeChange={v => handleScoreChange(match.id, 'home', v)}
+              onAwayChange={v => handleScoreChange(match.id, 'away', v)}
+            />
           )}
-          renderItem={({ item: match, section }) => {
-            if (collapsedGroups[section.title]) return null;
-
-            return (
-              <MatchRow
-                match={match}
-                homeScore={localScores[match.id]?.home ?? ''}
-                awayScore={localScores[match.id]?.away ?? ''}
-                locked={isLocked}
-                onHomeChange={v => handleScoreChange(match.id, 'home', v)}
-                onAwayChange={v => handleScoreChange(match.id, 'away', v)}
-              />
-            );
-          }}
-          ListHeaderComponent={
-            <View>
-              {/* Status / progress bar */}
-              {tournamentLocked ? (
-                <View style={styles.finalBanner}>
-                  <Ionicons name="shield-checkmark" size={20} color={colors.accent} />
-                  <Text style={styles.finalBannerText}>
-                    {isFinal ? 'Quiniela enviada y bloqueada' : 'El torneo ya inició — no se puede editar'}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.progressCard}>
-                  {isFinal && (
-                    <View style={styles.submittedInlineBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                      <Text style={styles.submittedInlineText}>Enviada — puedes seguir editando hasta que inicie el mundial</Text>
-                    </View>
-                  )}
-                  <View style={styles.progressRow}>
-                    <Text style={styles.progressLabel}>
-                      {filledCount} / {matches.length} partidos
-                    </Text>
-                    <Text style={styles.progressPct}>{pct}%</Text>
-                  </View>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${pct}%` }]} />
-                  </View>
-                </View>
-              )}
-
-              <View style={styles.groupToolsWrap}>
-                <View style={styles.groupToolsTop}>
-                  <Text style={styles.groupToolsTitle}>Navega por grupos</Text>
-                  <View style={styles.groupToolsBtns}>
-                    <TouchableOpacity style={styles.groupToolsBtn} onPress={expandAllGroups}>
-                      <Text style={styles.groupToolsBtnText}>Expandir</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.groupToolsBtn} onPress={collapseAllGroups}>
-                      <Text style={styles.groupToolsBtnText}>Contraer</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.groupChipsScroll}
-                >
-                  {groupStats.map(g => {
-                    const isCollapsed = collapsedGroups[g.title];
-                    return (
-                      <TouchableOpacity
-                        key={g.title}
-                        style={[styles.groupChip, !isCollapsed && styles.groupChipActive]}
-                        onPress={() => toggleGroup(g.title)}
-                      >
-                        <Text style={[styles.groupChipText, !isCollapsed && styles.groupChipTextActive]}>
-                          {g.title}
-                        </Text>
-                        <Text style={[styles.groupChipSub, !isCollapsed && styles.groupChipSubActive]}>
-                          {g.filled}/{g.total}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+          ListEmptyComponent={
+            activeGroupComplete ? (
+              <View style={styles.completeState}>
+                <Text style={styles.completeIcon}>✅</Text>
+                <Text style={styles.completeTitle}>¡Grupo {activeGroup} completo!</Text>
+                <Text style={styles.completeSub}>Todas las predicciones de este grupo están listas</Text>
               </View>
-
-              {error && (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={14} color={colors.error} />
-                  <Text style={styles.errorText}>{error}</Text>
-                </View>
-              )}
-              {validationErrors.length > 0 && (
-                <View style={styles.errorBanner}>
-                  {validationErrors.map((e, i) => (
-                    <Text key={i} style={styles.errorText}>• {e}</Text>
-                  ))}
-                </View>
-              )}
-              {savedOk && mode === 'edit' && (
-                <View style={styles.successBanner}>
-                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                  <Text style={styles.successText}>Guardado</Text>
-                </View>
-              )}
-            </View>
+            ) : null
           }
           ListFooterComponent={
             <View style={styles.footer}>
-              {tournamentLocked ? (
-                <Card style={styles.submittedCard}>
-                  <Ionicons name="shield-checkmark" size={32} color={colors.accent} />
-                  <Text style={styles.submittedCardTitle}>Quiniela Bloqueada</Text>
-                  <Text style={styles.submittedCardSub}>El torneo ya inició.</Text>
-                </Card>
-              ) : null}
               {!allFilled && !tournamentLocked && (
                 <Text style={styles.hint}>
                   Faltan {matches.length - filledCount} partido{matches.length - filledCount !== 1 ? 's' : ''} para poder enviar
@@ -448,7 +436,7 @@ export default function PredictionsScreen() {
                     size="sm"
                     onPress={handleSaveAll}
                     loading={saving}
-                    disabled={filledCount === 0 || saving || submitting}
+                    disabled={filledCount === 0 || saving || submitting || importing}
                     fullWidth={false}
                     icon={<Ionicons name="save-outline" size={16} color="#fff" />}
                     style={{ flex: 1 }}
@@ -458,12 +446,26 @@ export default function PredictionsScreen() {
                     size="sm"
                     variant="gold"
                     onPress={() => setShowConfirmSubmit(true)}
-                    disabled={!allFilled || saving || submitting}
+                    disabled={!allFilled || saving || submitting || importing}
                     fullWidth={false}
                     icon={<Ionicons name="send" size={16} color={colors.navy} />}
                     style={{ flex: 1.1 }}
                   />
                 </>
+              )}
+
+              {showEditActions && (
+                <Button
+                  title={importing ? 'Importando…' : 'Importar'}
+                  variant="outline"
+                  size="sm"
+                  onPress={handleImportOpen}
+                  loading={importing}
+                  disabled={saving || submitting || importing}
+                  fullWidth={false}
+                  icon={<Ionicons name="copy-outline" size={16} color={colors.primary} />}
+                  style={{ flex: 0.9 }}
+                />
               )}
 
               <Button
@@ -511,6 +513,48 @@ export default function PredictionsScreen() {
                 </TouchableOpacity>
               </View>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Import predictions modal */}
+      <Modal visible={showImportModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '70%' }]}>
+            <View style={styles.modalIconWrap}>
+              <Ionicons name="copy-outline" size={28} color={colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Importar predicciones</Text>
+            <Text style={styles.modalBody}>
+              Selecciona la quiniela de la que quieres copiar tus predicciones. Se guardarán automáticamente.
+            </Text>
+            {importablePools.length === 0 ? (
+              <Text style={[styles.modalBody, { marginTop: spacing.md, color: colors.textMuted }]}>
+                No tienes otras quinielas con predicciones para importar.
+              </Text>
+            ) : (
+              <ScrollView style={{ width: '100%', marginTop: spacing.md }}>
+                {importablePools.map(pool => (
+                  <TouchableOpacity
+                    key={pool.id}
+                    style={styles.importPoolItem}
+                    onPress={() => handleImportFrom(pool)}
+                  >
+                    <View style={styles.importPoolIcon}>
+                      <Ionicons name="football-outline" size={18} color={colors.primary} />
+                    </View>
+                    <Text style={styles.importPoolName} numberOfLines={1}>{pool.name}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={[styles.modalBtn, styles.modalBtnOutline, { marginTop: spacing.md, alignSelf: 'stretch' }]}
+              onPress={() => setShowImportModal(false)}
+            >
+              <Text style={[styles.modalBtnText, { color: colors.textMuted }]}>Cancelar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -582,77 +626,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  groupToolsWrap: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
+  filterTabs: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    ...shadows.sm,
-  },
-  groupToolsTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  groupToolsTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  groupToolsBtns: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  groupToolsBtn: {
-    borderWidth: 1,
-    borderColor: '#CCE0F7',
-    backgroundColor: '#F6FAFF',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
+    padding: 3,
   },
-  groupToolsBtnText: {
-    fontSize: 10,
-    color: colors.primary,
-    fontWeight: '700',
+  filterTab: {
+    flex: 1, paddingVertical: 7, borderRadius: radius.full, alignItems: 'center',
   },
+  filterTabActive: { backgroundColor: colors.navy },
+  filterTabText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  filterTabTextActive: { color: '#fff' },
   groupChipsScroll: {
-    gap: spacing.xs,
-    paddingVertical: 2,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   groupChip: {
-    borderWidth: 1,
-    borderColor: '#CFE0F1',
-    borderRadius: radius.md,
-    backgroundColor: '#F8FBFF',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 54,
     alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    minWidth: 58,
+    position: 'relative',
   },
   groupChipActive: {
     backgroundColor: colors.primaryDark,
     borderColor: colors.primaryDark,
   },
-  groupChipText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.text,
+  groupCompleteDot: {
+    position: 'absolute', top: 4, right: 4,
+    width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#16A34A',
   },
-  groupChipTextActive: {
-    color: colors.accentBright,
-  },
-  groupChipSub: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  groupChipSubActive: {
-    color: '#C5D8F0',
-  },
+  groupChipText: { fontSize: 14, fontWeight: '800', color: colors.text },
+  groupChipTextActive: { color: '#fff' },
+  groupChipSub: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
+  groupChipSubActive: { color: 'rgba(255,255,255,0.65)' },
+  completeState: { alignItems: 'center', paddingVertical: spacing.xxl },
+  completeIcon: { fontSize: 48, marginBottom: spacing.md },
+  completeTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
+  completeSub: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
 
   progressCard: {
     backgroundColor: colors.surface,
@@ -821,4 +840,29 @@ const styles = StyleSheet.create({
   modalBtnOutline: { borderWidth: 1.5, borderColor: colors.border },
   modalBtnPrimary: { backgroundColor: colors.primary, paddingHorizontal: spacing.xl },
   modalBtnText: { fontSize: 15, fontWeight: '700' },
+  importPoolItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  importPoolIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EAF6EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(10,107,53,0.2)',
+  },
+  importPoolName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
 });
