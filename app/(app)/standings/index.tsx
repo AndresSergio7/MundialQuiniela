@@ -22,6 +22,7 @@ import { exportPredictionsPdf } from '@/lib/predictionsPdf';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { StandingRow } from '@/components/StandingRow';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
+import { saveRanks, loadPreviousRanks } from '@/lib/rankHistory';
 import type { Standing, Pool, PoolMember } from '@/types';
 
 export default function StandingsScreen() {
@@ -37,6 +38,7 @@ export default function StandingsScreen() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [viewingPdfUserId, setViewingPdfUserId] = useState<string | null>(null);
+  const [rankChanges, setRankChanges] = useState<Record<string, number>>({});
 
   const isAdmin = currentPool ? currentPool.admin_id === user?.id : false;
 
@@ -49,6 +51,21 @@ export default function StandingsScreen() {
       getPoolMembers(activePool.id),
       fetchAllMatches(),
     ]);
+
+    // Compute rank changes vs previous snapshot
+    const userIds = data.map(s => s.user_id);
+    const prevRanks = await loadPreviousRanks(activePool.id, userIds);
+    const changes: Record<string, number> = {};
+    for (const s of data) {
+      if (s.rank != null && prevRanks[s.user_id] != null) {
+        changes[s.user_id] = prevRanks[s.user_id] - s.rank; // positive = moved up
+      } else {
+        changes[s.user_id] = 0;
+      }
+    }
+    setRankChanges(changes);
+    await saveRanks(activePool.id, data.filter(s => s.rank != null).map(s => ({ userId: s.user_id, rank: s.rank! })));
+
     setStandings(data);
     setMembers(poolMembers);
     setMemberCount(poolMembers.length);
@@ -165,6 +182,52 @@ export default function StandingsScreen() {
         }
         ListHeaderComponent={
           <View>
+            {/* TOP 3 PODIUM */}
+            {standings.length >= 3 && (
+              <View style={styles.podiumWrap}>
+                <View style={styles.podiumGlowA} />
+                <View style={styles.podiumGlowB} />
+                <Text style={styles.podiumEyebrow}>CLASIFICACIÓN</Text>
+                <Text style={styles.podiumTitle}>{currentPool.name}</Text>
+                <View style={styles.podiumRow}>
+                  {/* 2nd */}
+                  <View style={[styles.podiumItem]}>
+                    <View style={[styles.podiumAvatar, styles.podiumAvatarSilver]}>
+                      <Text style={styles.podiumAvatarText}>{(standings[1].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[1].profile?.username ?? '—'}</Text>
+                    <Text style={styles.podiumPts}>{standings[1].total_points} pts</Text>
+                    <View style={[styles.podiumPedestal, styles.podiumPedestalSilver]}>
+                      <Text style={styles.podiumPedestalNum}>2</Text>
+                    </View>
+                  </View>
+                  {/* 1st */}
+                  <View style={[styles.podiumItem]}>
+                    <Text style={styles.podiumCrown}>👑</Text>
+                    <View style={[styles.podiumAvatar, styles.podiumAvatarGold]}>
+                      <Text style={styles.podiumAvatarText}>{(standings[0].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[0].profile?.username ?? '—'}</Text>
+                    <Text style={styles.podiumPts}>{standings[0].total_points} pts</Text>
+                    <View style={[styles.podiumPedestal, styles.podiumPedestalGold]}>
+                      <Text style={styles.podiumPedestalNum}>1</Text>
+                    </View>
+                  </View>
+                  {/* 3rd */}
+                  <View style={[styles.podiumItem]}>
+                    <View style={[styles.podiumAvatar, styles.podiumAvatarBronze]}>
+                      <Text style={styles.podiumAvatarText}>{(standings[2].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[2].profile?.username ?? '—'}</Text>
+                    <Text style={styles.podiumPts}>{standings[2].total_points} pts</Text>
+                    <View style={[styles.podiumPedestal, styles.podiumPedestalBronze]}>
+                      <Text style={styles.podiumPedestalNum}>3</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* Hero card */}
             <View style={styles.heroWrap}>
               <View style={styles.heroCard}>
@@ -319,6 +382,7 @@ export default function StandingsScreen() {
                 isAdmin={isAdmin}
                 isPaid={member?.is_paid ?? false}
                 canViewPdf={tournamentStarted}
+                rankChange={rankChanges[item.user_id] ?? 0}
                 onPress={() => handleViewPdf(item)}
                 onTogglePaid={(paid) => handleTogglePaid(member?.id ?? '', item.user_id, paid)}
               />
@@ -654,4 +718,38 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
+
+  // Podium
+  podiumWrap: {
+    backgroundColor: colors.primaryDark, overflow: 'hidden',
+    paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: 0,
+  },
+  podiumGlowA: {
+    position: 'absolute', width: 200, height: 200, borderRadius: 100,
+    backgroundColor: 'rgba(201,168,76,0.12)', top: -60, right: -60,
+  },
+  podiumGlowB: {
+    position: 'absolute', width: 140, height: 140, borderRadius: 70,
+    backgroundColor: 'rgba(255,255,255,0.05)', bottom: 0, left: -40,
+  },
+  podiumEyebrow: { fontSize: 10, fontWeight: '800', color: colors.accentBright, letterSpacing: 1.5, marginBottom: 2 },
+  podiumTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: spacing.lg },
+  podiumRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 8 },
+  podiumItem: { alignItems: 'center', flex: 1 },
+  podiumCrown: { fontSize: 20, marginBottom: 4 },
+  podiumAvatar: {
+    width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6, borderWidth: 2,
+  },
+  podiumAvatarGold: { backgroundColor: colors.accent, borderColor: colors.accentBright },
+  podiumAvatarSilver: { backgroundColor: colors.silver, borderColor: '#CBD5E1' },
+  podiumAvatarBronze: { backgroundColor: colors.bronze, borderColor: '#D4915A' },
+  podiumAvatarText: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  podiumUsername: { fontSize: 12, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 2 },
+  podiumPts: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8 },
+  podiumPedestal: { width: '100%', alignItems: 'center', justifyContent: 'center' },
+  podiumPedestalGold: { height: 52, backgroundColor: colors.accent },
+  podiumPedestalSilver: { height: 38, backgroundColor: colors.silver },
+  podiumPedestalBronze: { height: 28, backgroundColor: colors.bronze },
+  podiumPedestalNum: { fontSize: 22, fontWeight: '900', color: '#fff' },
 });
