@@ -8,17 +8,27 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePoolStore } from '@/store/pool';
-import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
+import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import type { Pool } from '@/types';
 
 interface PoolSelectorBarProps {
   onPoolChange?: (pool: Pool) => void;
+  contextLabel?: string;
+  rightBadgeText?: string;
+  showDecorations?: boolean;
 }
 
-export function PoolSelectorBar({ onPoolChange }: PoolSelectorBarProps) {
+export function PoolSelectorBar({
+  onPoolChange,
+  contextLabel = 'MI QUINIELA',
+  rightBadgeText,
+  showDecorations = true,
+}: PoolSelectorBarProps) {
   const { currentPool, pools, setCurrentPool } = usePoolStore();
   const [modalVisible, setModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const canSwitch = pools.length > 1;
 
@@ -30,32 +40,34 @@ export function PoolSelectorBar({ onPoolChange }: PoolSelectorBarProps) {
 
   return (
     <>
-      <View style={styles.container}>
-        <View style={styles.ball1} />
-        <View style={styles.ball2} />
-        <View style={styles.ball3} />
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => canSwitch && setModalVisible(true)}
-          activeOpacity={canSwitch ? 0.82 : 1}
-        >
-          <View style={styles.left}>
-            <View style={styles.trophyWrap}>
-              <Ionicons name="trophy" size={15} color={colors.primary} />
-            </View>
-            <View style={styles.poolInfo}>
-              <Text style={styles.poolLabel}>LIGA ACTIVA</Text>
-              <Text style={styles.poolName} numberOfLines={1}>
-                {currentPool?.name ?? 'Selecciona una quiniela'}
-              </Text>
-            </View>
-          </View>
-          {canSwitch && (
-            <View style={styles.changeChip}>
-              <Text style={styles.changeText}>Cambiar</Text>
-              <Ionicons name="chevron-down" size={12} color={colors.primary} />
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.sm) + spacing.xs }]}>
+        {showDecorations && (
+          <>
+            <View style={styles.ball1} />
+            <View style={styles.ball2} />
+            <View style={styles.ball3} />
+          </>
+        )}
+
+        <View style={styles.headerTopRow}>
+          <Text style={styles.label}>{contextLabel}</Text>
+          {!!rightBadgeText && (
+            <View style={styles.rightBadge}>
+              <Text style={styles.rightBadgeText}>{rightBadgeText}</Text>
             </View>
           )}
+        </View>
+
+        <TouchableOpacity
+          style={styles.selectorChip}
+          onPress={() => setModalVisible(true)}
+          activeOpacity={0.82}
+        >
+          <View style={styles.selectorDot} />
+          <Text style={styles.selectorText} numberOfLines={1}>
+            {currentPool?.name ?? 'Sin quiniela'}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.86)" />
         </TouchableOpacity>
       </View>
 
@@ -106,29 +118,28 @@ export function PoolSelectorBar({ onPoolChange }: PoolSelectorBarProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.primaryDark,
+    backgroundColor: '#0B4A2E',
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.lg + spacing.xs,
     overflow: 'hidden',
     position: 'relative',
   },
   ball1: {
     position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    top: -60,
-    right: -30,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    top: -80,
+    right: -36,
   },
   ball2: {
     position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: 'rgba(201,168,76,0.08)',
-    bottom: -40,
+    bottom: -48,
     left: -10,
   },
   ball3: {
@@ -138,68 +149,62 @@ const styles = StyleSheet.create({
     borderRadius: 35,
     borderWidth: 1,
     borderColor: 'rgba(201,168,76,0.28)',
-    top: 10,
+    top: 22,
     left: 40,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-    elevation: 5,
   },
-  left: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.sm,
+  label: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.78)',
+    letterSpacing: 1,
+    fontFamily: 'BarlowCondensed_700Bold',
+    marginBottom: 2,
   },
-  trophyWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.full,
-    backgroundColor: colors.successLight,
+  rightBadge: {
+    minHeight: 26,
+    borderRadius: 13,
+    paddingHorizontal: spacing.sm + 2,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  poolInfo: {
-    flex: 1,
-  },
-  poolLabel: {
-    fontSize: 9,
+  rightBadgeText: {
+    fontSize: 12,
+    color: '#FFFFFF',
     fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 1.2,
+    fontFamily: 'BarlowCondensed_700Bold',
   },
-  poolName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: 0.1,
-  },
-  changeChip: {
+  selectorChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.successLight,
+    gap: spacing.xs + 2,
+    marginTop: spacing.xs + 2,
+    minHeight: 42,
+    borderRadius: 14,
+    paddingHorizontal: spacing.sm + 2,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: colors.primary + '30',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-    gap: 4,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
-  changeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 0.3,
+  selectorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
+  selectorText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_700Bold',
   },
   overlay: {
     flex: 1,

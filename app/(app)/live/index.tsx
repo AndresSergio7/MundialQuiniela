@@ -59,7 +59,7 @@ export default function LiveScreen() {
 
   return (
     <View style={styles.screen}>
-      <PoolSelectorBar />
+      <PoolSelectorBar contextLabel="EN VIVO" rightBadgeText="HOY" />
       {/* Date header */}
       <View style={styles.dateHeader}>
         <Text style={styles.dateTitle}>Hoy · {todayStr}</Text>

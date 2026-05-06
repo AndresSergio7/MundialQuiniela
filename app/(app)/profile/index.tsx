@@ -5,46 +5,33 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
+  Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { colors, spacing, radius, shadows } from '@/components/ui/theme';
-import {
-  getMyProfile,
-  listMyPaymentMethods,
-  removePaymentMethod,
-  saveMyPaymentMethod,
-  setDefaultPaymentMethod,
-  updateMyProfile,
-} from '@/services/profile.service';
-import type { UserPaymentMethod } from '@/types';
-
-const BRANDS = ['visa', 'mastercard', 'amex'];
+import { colors, spacing, radius, shadows, typography } from '@/components/ui/theme';
+import { getMyProfile, updateMyProfile, uploadAvatar } from '@/services/profile.service';
+import { supabase } from '@/lib/supabase';
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [savingMethod, setSavingMethod] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
 
-  const [cardBrand, setCardBrand] = useState('visa');
-  const [cardLast4, setCardLast4] = useState('');
-  const [expMonth, setExpMonth] = useState('');
-  const [expYear, setExpYear] = useState('');
-  const [holderName, setHolderName] = useState('');
-  const [markDefault, setMarkDefault] = useState(true);
-
-  const [methods, setMethods] = useState<UserPaymentMethod[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -56,29 +43,55 @@ export default function ProfileScreen() {
     return name.slice(0, 1).toUpperCase();
   }, [fullName, username]);
 
-  async function loadData(showRefresh = false) {
-    if (!user) return;
-
-    showRefresh ? setRefreshing(true) : setLoading(true);
-    setError(null);
-
-    const [profile, paymentMethods] = await Promise.all([
-      getMyProfile(user.id),
-      listMyPaymentMethods(user.id),
-    ]);
-
-    setFullName(profile?.full_name ?? '');
-    setAvatarUrl(profile?.avatar_url ?? '');
-    setMethods(paymentMethods);
-
-    setLoading(false);
-    setRefreshing(false);
-  }
-
   useEffect(() => {
-    loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!user) return;
+    let cancelled = false;
+    setLoading(true);
+    getMyProfile(user.id).then(profile => {
+      if (cancelled) return;
+      setFullName(profile?.full_name ?? '');
+      setAvatarUrl(profile?.avatar_url ?? '');
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [user?.id]);
+
+  async function handlePickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para cambiar el avatar.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const uri = result.assets[0].uri;
+    setLocalAvatarUri(uri);
+    setError(null);
+    setSuccess(null);
+
+    if (!user) return;
+    setUploadingAvatar(true);
+    const { url, error: uploadErr } = await uploadAvatar(user.id, uri);
+    setUploadingAvatar(false);
+
+    if (uploadErr || !url) {
+      setError(uploadErr ?? 'No se pudo subir el avatar.');
+      setLocalAvatarUri(null);
+      return;
+    }
+
+    setAvatarUrl(url);
+    await updateMyProfile(user.id, { avatar_url: url });
+    setSuccess('Avatar actualizado.');
+  }
 
   async function handleSaveProfile() {
     if (!user) return;
@@ -88,120 +101,62 @@ export default function ProfileScreen() {
 
     const result = await updateMyProfile(user.id, {
       full_name: fullName.trim() || null,
-      avatar_url: avatarUrl.trim() || null,
     });
 
     setSavingProfile(false);
-
     if (!result.success) {
       setError(result.error ?? 'No se pudo guardar el perfil.');
       return;
     }
-
     setSuccess('Perfil actualizado.');
   }
 
-  function resetCardForm() {
-    setCardBrand('visa');
-    setCardLast4('');
-    setExpMonth('');
-    setExpYear('');
-    setHolderName('');
-    setMarkDefault(methods.length === 0);
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.replace('/(auth)/login' as any);
   }
 
-  async function handleAddMethod() {
-    if (!user) return;
-
-    const last4 = cardLast4.replace(/[^0-9]/g, '').slice(0, 4);
-    const month = parseInt(expMonth, 10);
-    const year = parseInt(expYear, 10);
-
-    if (last4.length !== 4 || Number.isNaN(month) || Number.isNaN(year)) {
-      setError('Completa correctamente últimos 4, mes y año.');
-      return;
-    }
-
-    if (month < 1 || month > 12) {
-      setError('El mes debe estar entre 1 y 12.');
-      return;
-    }
-
-    if (year < new Date().getFullYear()) {
-      setError('El año de expiración no puede ser pasado.');
-      return;
-    }
-
-    setSavingMethod(true);
-    setError(null);
-    setSuccess(null);
-
-    const result = await saveMyPaymentMethod({
-      userId: user.id,
-      cardBrand,
-      cardLast4: last4,
-      expMonth: month,
-      expYear: year,
-      holderName: holderName.trim() || undefined,
-      isDefault: markDefault,
-    });
-
-    setSavingMethod(false);
-
-    if (!result.success) {
-      setError(result.error ?? 'No se pudo guardar el método de pago.');
-      return;
-    }
-
-    await loadData();
-    resetCardForm();
-    setSuccess('Método de pago agregado.');
-  }
-
-  async function handleSetDefault(methodId: string) {
-    if (!user) return;
-    setError(null);
-    const result = await setDefaultPaymentMethod(user.id, methodId);
-    if (!result.success) {
-      setError(result.error ?? 'No se pudo marcar como predeterminada.');
-      return;
-    }
-    await loadData();
-    setSuccess('Tarjeta predeterminada actualizada.');
-  }
-
-  async function handleDeleteMethod(methodId: string) {
-    if (!user) return;
-    const result = await removePaymentMethod(user.id, methodId);
-    if (!result.success) {
-      setError(result.error ?? 'No se pudo eliminar el método.');
-      return;
-    }
-    await loadData();
-    setSuccess('Método eliminado.');
-  }
+  const avatarSource = localAvatarUri ?? (avatarUrl || null);
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor={colors.accent} />}
-    >
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
-      ) : (
-        <>
-          <View style={styles.hero}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroTitle}>{fullName.trim() || username}</Text>
-              <Text style={styles.heroSub}>{email}</Text>
-            </View>
-            <Ionicons name="person-circle-outline" size={28} color={colors.accent} />
-          </View>
+    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+      {/* Hero */}
+      <View style={[styles.hero, { paddingTop: Math.max(insets.top, spacing.md) + spacing.sm }]}>
+        <View style={styles.heroGlow} />
+        <View style={styles.heroGlow2} />
 
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.avatarWrap} onPress={handlePickAvatar} activeOpacity={0.85}>
+          {uploadingAvatar ? (
+            <View style={styles.avatarCircle}>
+              <ActivityIndicator color={colors.navy} />
+            </View>
+          ) : avatarSource ? (
+            <Image source={{ uri: avatarSource }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarInitial}>{initials}</Text>
+            </View>
+          )}
+          <View style={styles.avatarEditBadge}>
+            <Ionicons name="camera" size={13} color="#fff" />
+          </View>
+        </TouchableOpacity>
+
+        <Text style={styles.heroUsername}>{username}</Text>
+        <Text style={styles.heroEmail}>{email}</Text>
+      </View>
+
+      {/* Feedback */}
+      {(error || success) && (
+        <View style={styles.feedbackWrap}>
           {error && (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={14} color={colors.error} />
@@ -214,149 +169,80 @@ export default function ProfileScreen() {
               <Text style={styles.successText}>{success}</Text>
             </View>
           )}
+        </View>
+      )}
 
-          <Card style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Perfil</Text>
-            <Input
-              label="Nombre completo"
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Tu nombre"
-            />
-            <Input
-              label="Avatar URL (opcional)"
-              value={avatarUrl}
-              onChangeText={setAvatarUrl}
-              placeholder="https://..."
-              autoCapitalize="none"
-            />
-            <Button
-              title={savingProfile ? 'Guardando...' : 'Guardar perfil'}
-              onPress={handleSaveProfile}
-              loading={savingProfile}
-              icon={<Ionicons name="save-outline" size={16} color="#fff" />}
-            />
-          </Card>
-
-          <Card style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Métodos de pago</Text>
-              <View style={styles.safeBadge}>
-                <Ionicons name="shield-checkmark" size={12} color={colors.primaryDark} />
-                <Text style={styles.safeBadgeText}>Solo metadata</Text>
-              </View>
-            </View>
-
-            <Text style={styles.disclaimer}>
-              No almacenamos número completo ni CVV. Solo guardamos marca, últimos 4 y expiración.
-            </Text>
-
-            <View style={styles.brandRow}>
-              {BRANDS.map((brand) => {
-                const active = cardBrand === brand;
-                return (
-                  <TouchableOpacity
-                    key={brand}
-                    style={[styles.brandChip, active && styles.brandChipActive]}
-                    onPress={() => setCardBrand(brand)}
-                  >
-                    <Text style={[styles.brandChipText, active && styles.brandChipTextActive]}>{brand.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Input
-              label="Últimos 4 dígitos"
-              value={cardLast4}
-              onChangeText={(v) => setCardLast4(v.replace(/[^0-9]/g, '').slice(0, 4))}
-              placeholder="4242"
-              keyboardType="number-pad"
-              maxLength={4}
-            />
-
-            <View style={styles.rowFields}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Mes"
-                  value={expMonth}
-                  onChangeText={(v) => setExpMonth(v.replace(/[^0-9]/g, '').slice(0, 2))}
-                  placeholder="08"
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Año"
-                  value={expYear}
-                  onChangeText={(v) => setExpYear(v.replace(/[^0-9]/g, '').slice(0, 4))}
-                  placeholder="2028"
-                  keyboardType="number-pad"
-                  maxLength={4}
-                />
-              </View>
-            </View>
-
-            <Input
-              label="Titular (opcional)"
-              value={holderName}
-              onChangeText={setHolderName}
-              placeholder="Nombre del titular"
-            />
-
-            <TouchableOpacity style={styles.defaultToggle} onPress={() => setMarkDefault((v) => !v)}>
-              <Ionicons
-                name={markDefault ? 'checkmark-circle' : 'ellipse-outline'}
-                size={18}
-                color={markDefault ? colors.primary : colors.textMuted}
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
+      ) : (
+        <>
+          {/* Datos personales */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>DATOS PERSONALES</Text>
+            <View style={styles.card}>
+              <Input
+                label="Nombre completo"
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Tu nombre"
               />
-              <Text style={styles.defaultToggleText}>Marcar como predeterminada</Text>
-            </TouchableOpacity>
-
-            <Button
-              title={savingMethod ? 'Guardando...' : 'Agregar método'}
-              onPress={handleAddMethod}
-              loading={savingMethod}
-              icon={<Ionicons name="card-outline" size={16} color="#fff" />}
-            />
-
-            <View style={styles.savedMethodsWrap}>
-              {methods.length === 0 ? (
-                <Text style={styles.emptyMethods}>Aún no tienes métodos guardados.</Text>
-              ) : (
-                methods.map((method) => (
-                  <View key={method.id} style={styles.methodCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.methodTitle}>
-                        {method.card_brand.toUpperCase()} **** {method.card_last4}
-                      </Text>
-                      <Text style={styles.methodSub}>
-                        Exp: {String(method.exp_month).padStart(2, '0')}/{method.exp_year}
-                        {method.holder_name ? ` · ${method.holder_name}` : ''}
-                      </Text>
-                    </View>
-
-                    <View style={styles.methodActions}>
-                      {method.is_default ? (
-                        <View style={styles.defaultPill}>
-                          <Text style={styles.defaultPillText}>Predeterminada</Text>
-                        </View>
-                      ) : (
-                        <TouchableOpacity onPress={() => handleSetDefault(method.id)} style={styles.methodIconBtn}>
-                          <Ionicons name="star-outline" size={16} color={colors.primary} />
-                        </TouchableOpacity>
-                      )}
-
-                      <TouchableOpacity onPress={() => handleDeleteMethod(method.id)} style={styles.methodIconBtn}>
-                        <Ionicons name="trash-outline" size={16} color={colors.error} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              )}
+              <TouchableOpacity
+                style={[styles.saveBtn, savingProfile && styles.saveBtnDisabled]}
+                onPress={handleSaveProfile}
+                disabled={savingProfile}
+              >
+                {savingProfile ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={16} color="#fff" />
+                    <Text style={styles.saveBtnText}>Guardar cambios</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
-          </Card>
+          </View>
+
+          {/* Cuenta */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>CUENTA</Text>
+            <View style={styles.card}>
+              <View style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <View style={[styles.menuIconWrap, { backgroundColor: '#EAF6EE' }]}>
+                    <Ionicons name="notifications-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.menuItemTitle}>Notificaciones</Text>
+                    <Text style={styles.menuItemSub}>Próximamente</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textLight} />
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <View style={[styles.menuIconWrap, { backgroundColor: '#EAF6EE' }]}>
+                    <Ionicons name="mail-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.menuItemTitle}>Correo</Text>
+                    <Text style={styles.menuItemSub}>{email}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Cerrar sesión */}
+          <View style={[styles.section, { marginBottom: spacing.xl }]}>
+            <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
+              <Ionicons name="log-out-outline" size={18} color={colors.error} />
+              <Text style={styles.signOutText}>Cerrar sesión</Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </ScrollView>
@@ -365,202 +251,206 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xxl },
 
   hero: {
-    backgroundColor: colors.primaryDark,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    flexDirection: 'row',
+    backgroundColor: '#084D26',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl + spacing.md,
     alignItems: 'center',
-    gap: spacing.sm,
-    ...shadows.md,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroGlow: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(201,168,76,0.10)',
+    top: -60,
+    right: -50,
+  },
+  heroGlow2: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    bottom: -40,
+    left: -20,
+  },
+  backBtn: {
+    alignSelf: 'flex-start',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  avatarWrap: {
+    position: 'relative',
     marginBottom: spacing.md,
   },
   avatarCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.full,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
-  avatarText: {
+  avatarImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  avatarInitial: {
+    fontSize: 36,
     color: colors.navy,
-    fontSize: 18,
-    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_900Black',
   },
-  heroTitle: {
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: '#084D26',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroUsername: {
+    fontSize: 26,
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+    lineHeight: 28,
   },
-  heroSub: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 12,
+  heroEmail: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.65)',
+    fontFamily: 'BarlowCondensed_500Medium',
     marginTop: 2,
   },
 
+  feedbackWrap: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    gap: spacing.xs,
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: colors.errorLight,
-    borderWidth: 1,
-    borderColor: colors.error + '40',
     borderRadius: radius.md,
     padding: spacing.sm,
-    marginBottom: spacing.sm,
   },
-  errorText: { fontSize: 12, color: colors.error, flex: 1 },
+  errorText: { ...typography.caption, color: colors.error, flex: 1 },
   successBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
     borderRadius: radius.md,
     padding: spacing.sm,
+  },
+  successText: { ...typography.caption, color: colors.success, fontWeight: '700' },
+
+  section: {
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontFamily: 'BarlowCondensed_700Bold',
+    letterSpacing: 1.5,
     marginBottom: spacing.sm,
   },
-  successText: { fontSize: 12, color: colors.success, fontWeight: '700' },
-
-  sectionCard: {
-    marginBottom: spacing.md,
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.sm,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: spacing.sm,
+
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: spacing.sm + 4,
+    marginTop: spacing.xs,
   },
-  sectionHeader: {
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  safeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.accentLight,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.accent + '40',
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 3,
-  },
-  safeBadgeText: {
-    fontSize: 10,
-    color: colors.primaryDark,
-    fontWeight: '700',
-  },
-  disclaimer: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-    lineHeight: 18,
-  },
-
-  brandRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  brandChip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
-  },
-  brandChipActive: {
-    backgroundColor: colors.navy,
-    borderColor: colors.navy,
-  },
-  brandChipText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-  brandChipTextActive: {
-    color: colors.accent,
-  },
-
-  rowFields: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  defaultToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  defaultToggleText: {
-    fontSize: 12,
-    color: colors.text,
-    fontWeight: '600',
-  },
-
-  savedMethodsWrap: {
-    marginTop: spacing.md,
-    gap: spacing.xs,
-  },
-  emptyMethods: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
     paddingVertical: spacing.sm,
   },
-  methodCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.sm,
+  menuItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
   },
-  methodTitle: {
-    fontSize: 13,
-    color: colors.text,
-    fontWeight: '800',
-  },
-  methodSub: {
-    marginTop: 2,
-    fontSize: 11,
-    color: colors.textMuted,
-  },
-  methodActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  methodIconBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.full,
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  menuItemTitle: {
+    fontSize: 15,
+    color: colors.text,
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  menuItemSub: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontFamily: 'BarlowCondensed_500Medium',
+    marginTop: 1,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.borderLight,
+    marginVertical: spacing.xs,
+  },
+
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.surface,
+    borderRadius: 14,
+    paddingVertical: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.error + '30',
   },
-  defaultPill: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 3,
-  },
-  defaultPillText: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '700',
+  signOutText: {
+    fontSize: 15,
+    color: colors.error,
+    fontFamily: 'BarlowCondensed_700Bold',
   },
 });

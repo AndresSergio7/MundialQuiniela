@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { listMyPools } from '@/services/pools.service';
@@ -23,17 +24,61 @@ import {
 } from '@/services/predictions.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { MatchRow } from '@/components/MatchRow';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
 import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
 type LocalScores = Record<string, { home: string; away: string }>;
 
+interface QuickActionChipProps {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  tone?: 'primary' | 'accent' | 'soft';
+  style?: object;
+}
+
+function QuickActionChip({
+  title,
+  icon,
+  onPress,
+  disabled = false,
+  loading = false,
+  tone = 'soft',
+  style,
+}: QuickActionChipProps) {
+  const isDisabled = disabled || loading;
+  const chipToneStyle =
+    tone === 'primary' ? styles.quickActionChipPrimary : tone === 'accent' ? styles.quickActionChipAccent : styles.quickActionChipSoft;
+  const iconToneStyle =
+    tone === 'primary' ? styles.quickActionIconPrimary : tone === 'accent' ? styles.quickActionIconAccent : styles.quickActionIconSoft;
+  const iconColor = tone === 'primary' ? '#FFFFFF' : tone === 'accent' ? colors.navy : colors.primary;
+  const textToneStyle =
+    tone === 'primary' ? styles.quickActionTextPrimary : tone === 'accent' ? styles.quickActionTextAccent : styles.quickActionTextSoft;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={onPress}
+      disabled={isDisabled}
+      style={[styles.quickActionChip, chipToneStyle, isDisabled && styles.quickActionChipDisabled, style]}
+    >
+      <View style={[styles.quickActionIconWrap, iconToneStyle]}>
+        {loading ? <ActivityIndicator size="small" color={iconColor} /> : <Ionicons name={icon} size={15} color={iconColor} />}
+      </View>
+      <Text numberOfLines={1} style={[styles.quickActionText, textToneStyle]}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function PredictionsScreen() {
   const { user } = useAuthStore();
   const { currentPool } = usePoolStore();
+  const insets = useSafeAreaInsets();
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [localScores, setLocalScores] = useState<LocalScores>({});
@@ -54,6 +99,7 @@ export default function PredictionsScreen() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importablePools, setImportablePools] = useState<Pool[]>([]);
   const [importing, setImporting] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
 
   const isFinal = submission?.is_final === true;
   const isLocked = tournamentLocked;
@@ -373,7 +419,11 @@ export default function PredictionsScreen() {
 
   return (
     <View style={styles.screen}>
-      <PoolSelectorBar onPoolChange={pool => loadAll(pool)} />
+      <PoolSelectorBar
+        contextLabel="MI QUINIELA"
+        rightBadgeText={`${filledCount}/${matches.length}`}
+        onPoolChange={pool => loadAll(pool)}
+      />
 
       {loading ? (
         <View style={styles.centered}>
@@ -381,7 +431,7 @@ export default function PredictionsScreen() {
         </View>
       ) : (
         <FlatList
-          data={activeGroupComplete ? [] : visibleMatches}
+          data={visibleMatches}
           keyExtractor={m => m.id}
           contentContainerStyle={styles.list}
           refreshControl={
@@ -399,11 +449,11 @@ export default function PredictionsScreen() {
             />
           )}
           ListEmptyComponent={
-            activeGroupComplete ? (
+            activeFilter === 'pending' && activeGroupComplete ? (
               <View style={styles.completeState}>
                 <Text style={styles.completeIcon}>✅</Text>
                 <Text style={styles.completeTitle}>¡Grupo {activeGroup} completo!</Text>
-                <Text style={styles.completeSub}>Todas las predicciones de este grupo están listas</Text>
+                <Text style={styles.completeSub}>Cámbiate a “Todos” para revisar o editar tus marcadores</Text>
               </View>
             ) : null
           }
@@ -420,69 +470,97 @@ export default function PredictionsScreen() {
       )}
 
       {!loading && (
-        <View pointerEvents="box-none" style={styles.floatingWrap}>
-          <View style={styles.floatingBar}>
-            <View style={styles.floatingTopRow}>
-              <Text style={styles.floatingTitle}>Acciones rapidas</Text>
-              <Text style={styles.floatingMeta}>{filledCount}/{matches.length} llenados</Text>
+        <View pointerEvents="box-none" style={[styles.floatingWrap, { bottom: insets.bottom + 76 }]}>
+          <TouchableOpacity
+            style={styles.fabButton}
+            activeOpacity={0.88}
+            onPress={() => setShowQuickActions(true)}
+          >
+            <View style={styles.fabIconWrap}>
+              <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
             </View>
-
-            <View style={styles.floatingButtonsRow}>
-              {showEditActions && (
-                <>
-                  <Button
-                    title={saving ? 'Guardando…' : 'Guardar'}
-                    variant="secondary"
-                    size="sm"
-                    onPress={handleSaveAll}
-                    loading={saving}
-                    disabled={filledCount === 0 || saving || submitting || importing}
-                    fullWidth={false}
-                    icon={<Ionicons name="save-outline" size={16} color="#fff" />}
-                    style={{ flex: 1 }}
-                  />
-                  <Button
-                    title={isFinal ? 'Re-enviar' : 'Enviar'}
-                    size="sm"
-                    variant="gold"
-                    onPress={() => setShowConfirmSubmit(true)}
-                    disabled={!allFilled || saving || submitting || importing}
-                    fullWidth={false}
-                    icon={<Ionicons name="send" size={16} color={colors.navy} />}
-                    style={{ flex: 1.1 }}
-                  />
-                </>
-              )}
-
-              {showEditActions && (
-                <Button
-                  title={importing ? 'Importando…' : 'Importar'}
-                  variant="outline"
-                  size="sm"
-                  onPress={handleImportOpen}
-                  loading={importing}
-                  disabled={saving || submitting || importing}
-                  fullWidth={false}
-                  icon={<Ionicons name="copy-outline" size={16} color={colors.primary} />}
-                  style={{ flex: 0.9 }}
-                />
-              )}
-
-              <Button
-                title={exportingPdf ? 'Generando…' : 'PDF'}
-                variant="outline"
-                size="sm"
-                onPress={handleExportPdf}
-                disabled={printableRows.length === 0 || exportingPdf}
-                loading={exportingPdf}
-                fullWidth={false}
-                icon={<Ionicons name="print-outline" size={16} color={colors.primary} />}
-                style={{ flex: showEditActions ? 0.9 : 1 }}
-              />
-            </View>
-          </View>
+          </TouchableOpacity>
         </View>
       )}
+
+      <Modal visible={showQuickActions} transparent animationType="fade" onRequestClose={() => setShowQuickActions(false)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.quickSheetOverlay}
+          onPress={() => setShowQuickActions(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.quickSheet} onPress={() => {}}>
+            <View style={styles.quickSheetHeader}>
+              <View>
+                <Text style={styles.quickSheetTitle}>Acciones rápidas</Text>
+                <Text style={styles.quickSheetMeta}>{filledCount}/{matches.length} llenados</Text>
+              </View>
+              <TouchableOpacity style={styles.quickSheetClose} onPress={() => setShowQuickActions(false)}>
+                <Ionicons name="close" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.floatingButtonsStack}>
+              {showEditActions && (
+                <View style={styles.floatingButtonsRow}>
+                  <QuickActionChip
+                    title={saving ? 'Guardando…' : 'Guardar'}
+                    icon="save-outline"
+                    tone="primary"
+                    onPress={() => {
+                      setShowQuickActions(false);
+                      handleSaveAll();
+                    }}
+                    loading={saving}
+                    disabled={filledCount === 0 || saving || submitting || importing}
+                    style={styles.quickActionGrow}
+                  />
+                  <QuickActionChip
+                    title={isFinal ? 'Reenviar' : 'Enviar'}
+                    icon="send"
+                    tone="accent"
+                    onPress={() => {
+                      setShowQuickActions(false);
+                      setShowConfirmSubmit(true);
+                    }}
+                    disabled={!allFilled || saving || submitting || importing}
+                    style={styles.quickActionGrow}
+                  />
+                </View>
+              )}
+
+              <View style={styles.floatingButtonsRow}>
+                {showEditActions && (
+                  <QuickActionChip
+                    title={importing ? 'Importando…' : 'Importar'}
+                    icon="copy-outline"
+                    tone="soft"
+                    onPress={() => {
+                      setShowQuickActions(false);
+                      handleImportOpen();
+                    }}
+                    loading={importing}
+                    disabled={saving || submitting || importing}
+                    style={styles.quickActionGrow}
+                  />
+                )}
+                <QuickActionChip
+                  title={exportingPdf ? 'Generando…' : 'PDF'}
+                  icon="print-outline"
+                  tone="soft"
+                  onPress={() => {
+                    setShowQuickActions(false);
+                    handleExportPdf();
+                  }}
+                  loading={exportingPdf}
+                  disabled={printableRows.length === 0 || exportingPdf}
+                  style={styles.quickActionGrow}
+                />
+              </View>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Confirm submit */}
       <Modal visible={showConfirmSubmit} transparent animationType="fade">
@@ -765,42 +843,122 @@ const styles = StyleSheet.create({
   },
   floatingWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: spacing.md,
-    paddingHorizontal: spacing.md,
+    right: spacing.md,
   },
-  floatingBar: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl + 2,
+  fabButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#0D5A3A',
     borderWidth: 1,
-    borderColor: '#D4E2F1',
-    padding: spacing.sm,
-    gap: spacing.sm,
-    ...shadows.lg,
+    borderColor: '#0A492F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
   },
-  floatingTopRow: {
+  fabIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(13,27,42,0.28)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  quickSheet: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#D6E4DA',
+    padding: spacing.sm,
+    gap: spacing.xs + 2,
+    ...shadows.sm,
+  },
+  quickSheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.xs,
   },
-  floatingTitle: {
-    fontSize: 11,
-    color: colors.text,
+  quickSheetTitle: {
+    fontSize: 10,
+    color: '#60756A',
     fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    fontFamily: 'BarlowCondensed_700Bold',
   },
-  floatingMeta: {
+  quickSheetMeta: {
     fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '700',
+    color: '#4D6458',
+    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_700Bold',
   },
+  quickSheetClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F7F4',
+  },
+  floatingButtonsStack: { gap: spacing.xs + 2 },
   floatingButtonsRow: {
     flexDirection: 'row',
     gap: spacing.xs,
   },
+  quickActionGrow: { flex: 1 },
+  quickActionChip: {
+    minHeight: 42,
+    borderRadius: 13,
+    paddingHorizontal: spacing.sm + 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 1,
+  },
+  quickActionChipPrimary: {
+    backgroundColor: '#0D5A3A',
+    borderWidth: 1,
+    borderColor: '#0A492F',
+    ...shadows.sm,
+  },
+  quickActionChipAccent: {
+    backgroundColor: colors.accent,
+    borderWidth: 1,
+    borderColor: '#C69812',
+    ...shadows.sm,
+  },
+  quickActionChipSoft: {
+    backgroundColor: '#F6FAF7',
+    borderWidth: 1,
+    borderColor: '#CFE0D4',
+  },
+  quickActionChipDisabled: { opacity: 0.55 },
+  quickActionIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionIconPrimary: { backgroundColor: 'rgba(255,255,255,0.16)' },
+  quickActionIconAccent: { backgroundColor: 'rgba(13,27,42,0.14)' },
+  quickActionIconSoft: { backgroundColor: '#E9F2EC' },
+  quickActionText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.1,
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  quickActionTextPrimary: { color: '#FFFFFF' },
+  quickActionTextAccent: { color: colors.navy },
+  quickActionTextSoft: { color: '#0D5A3A' },
 
   modalOverlay: {
     flex: 1,

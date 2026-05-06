@@ -24,6 +24,27 @@ export async function getMyProfile(userId: string): Promise<Profile | null> {
   return (data as Profile | null) ?? null;
 }
 
+export async function uploadAvatar(userId: string, localUri: string): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const response = await fetch(localUri);
+    const blob = await response.blob();
+    const ext = localUri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const path = `${userId}/avatar.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, blob, { upsert: true, contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
+
+    if (uploadError) return { url: null, error: uploadError.message };
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    const url = `${data.publicUrl}?t=${Date.now()}`;
+    return { url, error: null };
+  } catch (e) {
+    return { url: null, error: 'No se pudo subir la imagen.' };
+  }
+}
+
 export async function updateMyProfile(
   userId: string,
   payload: {

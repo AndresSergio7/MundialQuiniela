@@ -7,15 +7,13 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  TextInput,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { getStandingsWithAllMembers } from '@/services/standings.service';
-import { getPoolMembers, updatePoolNotes, updateMemberPaidStatus } from '@/services/pools.service';
-import { syncResults } from '@/services/results.service';
+import { getPoolMembers } from '@/services/pools.service';
 import { fetchPredictionsForMember } from '@/services/predictions.service';
 import { fetchAllMatches } from '@/services/matches.service';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
@@ -23,24 +21,17 @@ import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { StandingRow } from '@/components/StandingRow';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { saveRanks, loadPreviousRanks } from '@/lib/rankHistory';
-import type { Standing, Pool, PoolMember } from '@/types';
+import type { Standing, Pool } from '@/types';
 
 export default function StandingsScreen() {
   const { user } = useAuthStore();
   const { currentPool } = usePoolStore();
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [members, setMembers] = useState<PoolMember[]>([]);
   const [memberCount, setMemberCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [tournamentStarted, setTournamentStarted] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [savingNotes, setSavingNotes] = useState(false);
   const [viewingPdfUserId, setViewingPdfUserId] = useState<string | null>(null);
   const [rankChanges, setRankChanges] = useState<Record<string, number>>({});
-
-  const isAdmin = currentPool ? currentPool.admin_id === user?.id : false;
 
   const loadStandings = useCallback(async (pool?: Pool) => {
     const activePool = pool ?? currentPool;
@@ -67,51 +58,16 @@ export default function StandingsScreen() {
     await saveRanks(activePool.id, data.filter(s => s.rank != null).map(s => ({ userId: s.user_id, rank: s.rank! })));
 
     setStandings(data);
-    setMembers(poolMembers);
     setMemberCount(poolMembers.length);
-    setNotes(activePool.notes ?? '');
     const started = allMatches.some((m) => m.status === 'live' || m.status === 'finished');
     setTournamentStarted(started);
     setLoading(false);
   }, [currentPool]);
 
-  const handleSync = useCallback(async () => {
-    if (!currentPool) return;
-    setSyncing(true);
-    await syncResults(currentPool.id);
-    await loadStandings();
-    setSyncing(false);
-  }, [currentPool, loadStandings]);
-
   useEffect(() => {
     loadStandings();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPool?.id]);
-
-  async function handleSaveNotes() {
-    if (!currentPool) return;
-    setSavingNotes(true);
-    const { error } = await updatePoolNotes(currentPool.id, notes);
-    setSavingNotes(false);
-    if (error) {
-      Alert.alert('Error', 'No se pudieron guardar las notas.');
-    } else {
-      setEditingNotes(false);
-    }
-  }
-
-  async function handleTogglePaid(poolMemberId: string, userId: string, isPaid: boolean) {
-    if (!currentPool) return;
-    const prev = members;
-    setMembers((ms) =>
-      ms.map((m) => (m.user_id === userId ? { ...m, is_paid: isPaid } : m)),
-    );
-    const { error } = await updateMemberPaidStatus(currentPool.id, userId, isPaid);
-    if (error) {
-      setMembers(prev);
-      Alert.alert('Error', 'No se pudo actualizar el estado de pago.');
-    }
-  }
 
   async function handleViewPdf(standing: Standing) {
     if (!currentPool || !tournamentStarted) return;
@@ -160,14 +116,29 @@ export default function StandingsScreen() {
   }
 
   const userStanding = standings.find((s) => s.user_id === user?.id);
-  const submittedCount = standings.length;
-  const submittedPct = memberCount > 0 ? (submittedCount / memberCount) * 100 : 0;
-
-  const memberPaidMap = new Map(members.map((m) => [m.user_id, m]));
+  const topThree = standings
+    .filter((s) => s.rank != null)
+    .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
+    .slice(0, 3);
+  const first = topThree.find((s) => s.rank === 1) ?? topThree[0] ?? null;
+  const second = topThree.find((s) => s.rank === 2) ?? topThree[1] ?? null;
+  const third = topThree.find((s) => s.rank === 3) ?? topThree[2] ?? null;
+  const showPodium = standings.length > 0;
+  const podiumName = (standing: Standing | null) => standing?.profile?.username ?? '—';
+  const podiumPoints = (standing: Standing | null) => (standing ? `${standing.total_points} pts` : '—');
+  const getPrecision = (standing: Standing) =>
+    standing.matches_played > 0
+      ? Math.round((standing.correct_results / standing.matches_played) * 100)
+      : 0;
 
   return (
     <View style={styles.screen}>
-      <PoolSelectorBar onPoolChange={(pool) => loadStandings(pool)} />
+      <PoolSelectorBar
+        contextLabel="CLASIFICACIÓN"
+        rightBadgeText="Esta semana"
+        showDecorations={false}
+        onPoolChange={(pool) => loadStandings(pool)}
+      />
 
       <FlatList
         data={standings}
@@ -182,194 +153,97 @@ export default function StandingsScreen() {
         }
         ListHeaderComponent={
           <View>
-            {/* TOP 3 PODIUM */}
-            {standings.length >= 3 && (
-              <View style={styles.podiumWrap}>
-                <View style={styles.podiumGlowA} />
-                <View style={styles.podiumGlowB} />
-                <Text style={styles.podiumEyebrow}>CLASIFICACIÓN</Text>
-                <Text style={styles.podiumTitle}>{currentPool.name}</Text>
-                <View style={styles.podiumRow}>
-                  {/* 2nd */}
-                  <View style={[styles.podiumItem]}>
-                    <View style={[styles.podiumAvatar, styles.podiumAvatarSilver]}>
-                      <Text style={styles.podiumAvatarText}>{(standings[1].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[1].profile?.username ?? '—'}</Text>
-                    <Text style={styles.podiumPts}>{standings[1].total_points} pts</Text>
-                    <View style={[styles.podiumPedestal, styles.podiumPedestalSilver]}>
-                      <Text style={styles.podiumPedestalNum}>2</Text>
-                    </View>
-                  </View>
-                  {/* 1st */}
-                  <View style={[styles.podiumItem]}>
-                    <Text style={styles.podiumCrown}>👑</Text>
-                    <View style={[styles.podiumAvatar, styles.podiumAvatarGold]}>
-                      <Text style={styles.podiumAvatarText}>{(standings[0].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[0].profile?.username ?? '—'}</Text>
-                    <Text style={styles.podiumPts}>{standings[0].total_points} pts</Text>
-                    <View style={[styles.podiumPedestal, styles.podiumPedestalGold]}>
-                      <Text style={styles.podiumPedestalNum}>1</Text>
-                    </View>
-                  </View>
-                  {/* 3rd */}
-                  <View style={[styles.podiumItem]}>
-                    <View style={[styles.podiumAvatar, styles.podiumAvatarBronze]}>
-                      <Text style={styles.podiumAvatarText}>{(standings[2].profile?.username?.[0] ?? '?').toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.podiumUsername} numberOfLines={1}>{standings[2].profile?.username ?? '—'}</Text>
-                    <Text style={styles.podiumPts}>{standings[2].total_points} pts</Text>
-                    <View style={[styles.podiumPedestal, styles.podiumPedestalBronze]}>
-                      <Text style={styles.podiumPedestalNum}>3</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
+            <View style={styles.standingsHero}>
+              <Text style={styles.standingsHeroEyebrow}>CLASIFICACIÓN</Text>
+              <Text style={styles.standingsHeroTitle}>{currentPool.name}</Text>
 
-            {/* Hero card */}
-            <View style={styles.heroWrap}>
-              <View style={styles.heroCard}>
-                <View style={styles.heroGlowA} />
-                <View style={styles.heroGlowB} />
-                <View style={styles.heroTopRow}>
-                  <View>
-                    <Text style={styles.heroEyebrow}>CLASIFICACION GENERAL</Text>
-                    <Text style={styles.heroTitle}>Tabla de Posiciones</Text>
-                    <Text style={styles.heroSub}>{currentPool.name}</Text>
+              {showPodium && (
+                <>
+                  <View style={styles.standingsPodiumRow}>
+                    <View style={styles.standingsPodiumEntry}>
+                      <View style={[styles.podiumRankChip, styles.podiumRankChipSilver]}>
+                        <Text style={styles.podiumRankChipText}>#2</Text>
+                      </View>
+                      <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarSilver]}>
+                        <Text style={styles.standingsPodiumAvatarGlyph}>{second ? '⚡' : '—'}</Text>
+                      </View>
+                      <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(second)}</Text>
+                      <Text style={styles.standingsPodiumPoints}>{podiumPoints(second)}</Text>
+                    </View>
+
+                    <View style={styles.standingsPodiumEntryCenter}>
+                      <View style={[styles.podiumRankChip, styles.podiumRankChipGold]}>
+                        <Text style={styles.podiumRankChipText}>#1</Text>
+                      </View>
+                      <Text style={styles.standingsPodiumCrown}>♛</Text>
+                      <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarGold]}>
+                        <Text style={styles.standingsPodiumAvatarGlyph}>{(first?.profile?.username?.[0] ?? '—').toUpperCase()}</Text>
+                      </View>
+                      <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(first)}</Text>
+                      <Text style={styles.standingsPodiumPoints}>{podiumPoints(first)}</Text>
+                    </View>
+
+                    <View style={styles.standingsPodiumEntry}>
+                      <View style={[styles.podiumRankChip, styles.podiumRankChipBronze]}>
+                        <Text style={styles.podiumRankChipText}>#3</Text>
+                      </View>
+                      <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarBronze]}>
+                        <Text style={styles.standingsPodiumAvatarGlyph}>{third ? '🌟' : '—'}</Text>
+                      </View>
+                      <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(third)}</Text>
+                      <Text style={styles.standingsPodiumPoints}>{podiumPoints(third)}</Text>
+                    </View>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.syncChip, syncing && styles.syncChipActive]}
-                    onPress={handleSync}
-                    disabled={syncing}
-                  >
-                    <Ionicons
-                      name={syncing ? 'sync' : 'refresh-outline'}
-                      size={14}
-                      color={colors.accentBright}
-                    />
-                    <Text style={[styles.syncText, syncing && styles.syncTextActive]}>
-                      {syncing ? 'Sync…' : 'Sync'}
+
+                  <View style={styles.pedestalRow}>
+                    <View style={[styles.pedestalBox, styles.pedestalSilver]}><Text style={styles.pedestalNum}>2</Text></View>
+                    <View style={[styles.pedestalBox, styles.pedestalGold]}><Text style={styles.pedestalNum}>1</Text></View>
+                    <View style={[styles.pedestalBox, styles.pedestalBronze]}><Text style={styles.pedestalNum}>3</Text></View>
+                  </View>
+                </>
+              )}
+
+              {userStanding && (
+                <View style={styles.mySummaryCard}>
+                  <View style={styles.mySummaryTop}>
+                    <Text style={styles.mySummaryRank}>{userStanding.rank != null ? `#${userStanding.rank}` : '—'}</Text>
+                    <View style={styles.mySummaryUser}>
+                      <Text style={styles.mySummaryName}>Tú</Text>
+                      <Text style={styles.mySummaryMeta}>
+                        {userStanding.exact_scores} exactos · {getPrecision(userStanding)}% precisión
+                      </Text>
+                    </View>
+                    <View style={styles.mySummaryPointsWrap}>
+                      <Text style={styles.mySummaryPoints}>{userStanding.total_points}</Text>
+                      <Text style={styles.mySummaryPts}>PUNTOS</Text>
+                    </View>
+                  </View>
+                  <View style={styles.mySummaryBottom}>
+                    <Ionicons name="flame" size={15} color={colors.accent} />
+                    <Text style={styles.mySummaryBottomText}>
+                      {(() => {
+                        const below = standings.find((s) => s.rank === (userStanding.rank ?? 0) + 1);
+                        if (!below) return 'Sigue así, vas fuerte';
+                        const diff = userStanding.total_points - below.total_points;
+                        return diff > 0 ? `+${diff} pts sobre #${below.rank} · Aún puedes ganar` : 'La tabla está muy cerrada';
+                      })()}
                     </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.metricsRow}>
-                  <View style={styles.metricChip}>
-                    <Ionicons name="people-outline" size={14} color={colors.accentBright} />
-                    <Text style={styles.metricText}>{submittedCount}/{memberCount} enviados</Text>
-                  </View>
-                  <View style={styles.metricChip}>
-                    <Ionicons name="bar-chart-outline" size={14} color={colors.accentBright} />
-                    <Text style={styles.metricText}>{Math.round(submittedPct)}% de avance</Text>
                   </View>
                 </View>
-
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${submittedPct}%` as any }]} />
-                </View>
-              </View>
+              )}
             </View>
 
-            {/* My position card */}
-            {userStanding && (
-              <View style={styles.myCardWrap}>
-                <View style={styles.myCard}>
-                  <View style={styles.myAura} />
-                  <View style={styles.myCardLeft}>
-                    <Text style={styles.myCardTag}>MI POSICIÓN</Text>
-                    <Text style={styles.myRank}>
-                      {userStanding.rank != null ? `#${userStanding.rank}` : '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.myDivider} />
-                  <View style={styles.myCardRight}>
-                    <Text style={styles.myPoints}>{userStanding.total_points}</Text>
-                    <Text style={styles.myPtsLabel}>puntos</Text>
-                    <Text style={styles.myMeta}>
-                      {userStanding.exact_scores} exactos · {userStanding.correct_results} acertados
-                    </Text>
-                  </View>
-                  <View style={styles.myCardBadge}>
-                    <Ionicons name="flash" size={12} color={colors.navy} />
-                    <Text style={styles.myCardBadgeText}>Rendimiento</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* Notes card */}
-            <View style={styles.notesWrap}>
-              <View style={styles.notesCard}>
-                <View style={styles.notesHeader}>
-                  <View style={styles.notesTitleRow}>
-                    <Ionicons name="chatbox-ellipses-outline" size={16} color={colors.primary} />
-                    <Text style={styles.notesTitle}>Notas del grupo</Text>
-                  </View>
-                  {isAdmin && !editingNotes && (
-                    <TouchableOpacity onPress={() => setEditingNotes(true)} style={styles.editNotesBtn}>
-                      <Ionicons name="create-outline" size={15} color={colors.primary} />
-                      <Text style={styles.editNotesBtnText}>Editar</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {editingNotes ? (
-                  <View>
-                    <TextInput
-                      value={notes}
-                      onChangeText={setNotes}
-                      multiline
-                      placeholder="Escribe aquí las notas para el grupo…"
-                      placeholderTextColor={colors.textMuted}
-                      style={styles.notesInput}
-                    />
-                    <View style={styles.notesActions}>
-                      <TouchableOpacity
-                        style={styles.notesCancelBtn}
-                        onPress={() => { setEditingNotes(false); setNotes(currentPool.notes ?? ''); }}
-                      >
-                        <Text style={styles.notesCancelText}>Cancelar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.notesSaveBtn, savingNotes && styles.notesSaveBtnDisabled]}
-                        onPress={handleSaveNotes}
-                        disabled={savingNotes}
-                      >
-                        {savingNotes ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.notesSaveText}>Guardar</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : (
-                  <Text style={[styles.notesBody, !notes && styles.notesBodyEmpty]}>
-                    {notes || (isAdmin ? 'Sin notas aún. Toca "Editar" para agregar.' : 'Sin notas del grupo.')}
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            {/* PDF hint */}
-            {tournamentStarted && (
-              <View style={styles.pdfHintBanner}>
-                <Ionicons name="document-text-outline" size={14} color={colors.primary} />
-                <Text style={styles.pdfHintText}>Toca un participante para ver su quiniela en PDF</Text>
-              </View>
-            )}
+            <Text style={styles.tableCompleteTitle}>TABLA COMPLETA</Text>
 
             {loading && (
               <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
             )}
           </View>
         }
-        renderItem={({ item }) => {
-          const member = memberPaidMap.get(item.user_id);
+        renderItem={({ item, index }) => {
           const isGenerating = viewingPdfUserId === item.user_id;
           return (
-            <View>
+            <View style={styles.rowWrap}>
               {isGenerating && (
                 <View style={styles.pdfLoadingOverlay}>
                   <ActivityIndicator size="small" color={colors.primary} />
@@ -379,12 +253,11 @@ export default function StandingsScreen() {
               <StandingRow
                 standing={item}
                 isCurrentUser={item.user_id === user?.id}
-                isAdmin={isAdmin}
-                isPaid={member?.is_paid ?? false}
                 canViewPdf={tournamentStarted}
                 rankChange={rankChanges[item.user_id] ?? 0}
+                isFirst={index === 0}
+                isLast={index === standings.length - 1}
                 onPress={() => handleViewPdf(item)}
-                onTogglePaid={(paid) => handleTogglePaid(member?.id ?? '', item.user_id, paid)}
               />
             </View>
           );
@@ -428,6 +301,201 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
   emptySubtitle: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+
+  standingsHero: {
+    backgroundColor: '#0B4A2E',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  standingsHeroEyebrow: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: colors.accentBright,
+    letterSpacing: 2,
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  standingsHeroTitle: {
+    marginTop: spacing.xs,
+    fontSize: 18,
+    lineHeight: 22,
+    color: '#fff',
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_900Black',
+  },
+  standingsPodiumRow: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  standingsPodiumEntry: { flex: 1, alignItems: 'center' },
+  standingsPodiumEntryCenter: { flex: 1.2, alignItems: 'center' },
+  podiumRankChip: {
+    minWidth: 34,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+  },
+  podiumRankChipGold: {
+    backgroundColor: 'rgba(212,160,23,0.26)',
+    borderColor: 'rgba(212,160,23,0.6)',
+  },
+  podiumRankChipSilver: {
+    backgroundColor: 'rgba(187,196,200,0.24)',
+    borderColor: 'rgba(187,196,200,0.6)',
+  },
+  podiumRankChipBronze: {
+    backgroundColor: 'rgba(193,129,61,0.24)',
+    borderColor: 'rgba(193,129,61,0.6)',
+  },
+  podiumRankChipText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+    letterSpacing: 0.2,
+  },
+  standingsPodiumCrown: {
+    fontSize: 20,
+    color: colors.accentBright,
+    marginBottom: spacing.xs,
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  standingsPodiumAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    backgroundColor: '#fff',
+  },
+  standingsPodiumAvatarGold: { borderColor: '#D4A017' },
+  standingsPodiumAvatarSilver: { borderColor: '#AEB6B8' },
+  standingsPodiumAvatarBronze: { borderColor: '#BD7B38' },
+  standingsPodiumAvatarGlyph: {
+    fontSize: 30,
+    color: colors.navy,
+    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  standingsPodiumName: {
+    marginTop: spacing.sm,
+    fontSize: 14,
+    lineHeight: 16,
+    color: '#fff',
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  standingsPodiumPoints: {
+    marginTop: 2,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '700',
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  pedestalRow: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    alignItems: 'flex-end',
+    height: 200,
+  },
+  pedestalBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  pedestalGold: { flex: 1.2, height: 180, backgroundColor: '#C69A1A' },
+  pedestalSilver: { height: 146, backgroundColor: '#A6B0B0' },
+  pedestalBronze: { height: 120, backgroundColor: '#C1813D' },
+  pedestalNum: {
+    fontSize: 64,
+    color: '#fff',
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_900Black',
+    letterSpacing: -2,
+  },
+  mySummaryCard: {
+    marginTop: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#D4A017',
+    padding: spacing.md,
+  },
+  mySummaryTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  mySummaryRank: {
+    fontSize: 40,
+    color: '#C69A1A',
+    fontWeight: '900',
+    lineHeight: 40,
+    fontFamily: 'BarlowCondensed_900Black',
+  },
+  mySummaryUser: { flex: 1 },
+  mySummaryName: {
+    fontSize: 20,
+    lineHeight: 20,
+    color: colors.navy,
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  mySummaryMeta: {
+    marginTop: 2,
+    fontSize: 13,
+    color: '#4E6473',
+    fontWeight: '700',
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  mySummaryPointsWrap: { alignItems: 'flex-end' },
+  mySummaryPoints: {
+    fontSize: 42,
+    color: '#0A5033',
+    fontWeight: '900',
+    lineHeight: 40,
+    fontFamily: 'BarlowCondensed_900Black',
+  },
+  mySummaryPts: {
+    fontSize: 12,
+    color: '#5F7586',
+    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  mySummaryBottom: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    backgroundColor: '#F6F1E6',
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  mySummaryBottomText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#8A6600',
+    fontWeight: '800',
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  tableCompleteTitle: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    marginHorizontal: spacing.md,
+    fontSize: 26,
+    letterSpacing: 1.5,
+    color: '#3E4F5A',
+    fontWeight: '900',
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
 
   heroWrap: {
     paddingHorizontal: spacing.md,
@@ -697,6 +765,7 @@ const styles = StyleSheet.create({
   pdfLoadingText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
 
   list: { paddingBottom: spacing.xxl * 2 },
+  rowWrap: { marginHorizontal: spacing.md },
 
   emptyList: {
     alignItems: 'center',

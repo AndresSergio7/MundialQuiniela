@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
@@ -27,6 +28,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { currentPool, pools, setPools, setCurrentPool } = usePoolStore();
   const [loading, setLoading] = useState(false);
@@ -50,13 +52,14 @@ export default function HomeScreen() {
     setLoading(true);
     const nextPools = await listMyPools(user.id);
     setPools(nextPools);
+    const activePool = usePoolStore.getState().currentPool;
     if (nextPools.length === 0) {
       setCurrentPool(null);
-    } else if (!currentPool || !nextPools.some((p) => p.id === currentPool.id)) {
+    } else if (!activePool || !nextPools.some((p) => p.id === activePool.id)) {
       setCurrentPool(nextPools[0]);
     }
     setLoading(false);
-  }, [user, setPools, currentPool, setCurrentPool]);
+  }, [user, setPools, setCurrentPool]);
 
   const fetchStandings = useCallback(async () => {
     if (!currentPool || !user) return;
@@ -189,7 +192,7 @@ export default function HomeScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchPools} tintColor={colors.accent} />}
     >
       {/* ── HERO BANNER ── */}
-      <View style={styles.hero}>
+      <View style={[styles.hero, { paddingTop: Math.max(insets.top, spacing.md) + spacing.xs }]}>
         <View style={styles.heroPattern}>
           <View style={styles.heroBall2} />
           <View style={styles.heroBall3} />
@@ -243,12 +246,19 @@ export default function HomeScreen() {
               <Text style={styles.ligaCardLabel}>LIGA ACTIVA</Text>
               <Text style={styles.ligaCardName}>{currentPool.name}</Text>
             </View>
+            <View style={styles.ligaMembersBadge}>
+              <Ionicons name="people-outline" size={14} color="#9AA7A2" />
+              <Text style={styles.ligaMembersText}>{Math.max(1, standings.length)}/{currentPool.max_members}</Text>
+            </View>
+          </View>
+          <View style={styles.ligaProgressHeader}>
+            <Text style={styles.ligaProgressLabel}>Tus predicciones</Text>
             <Text style={styles.ligaCardFraction}>{filledCount}/{totalMatches}</Text>
           </View>
           <View style={styles.ligaProgressTrack}>
             {(filledCount / totalMatches) * 100 > 0 && (
               <LinearGradient
-                colors={['#16A34A', '#FBBF24']}
+                colors={['#2D8E5A', '#D4A017']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={[styles.ligaProgressFill, { width: `${(filledCount / totalMatches) * 100}%` as any }]}
@@ -449,7 +459,7 @@ const styles = StyleSheet.create({
 
   // Hero
   hero: {
-    backgroundColor: colors.primaryDark,
+    backgroundColor: '#0C3D2F',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.xxl + spacing.xl,
@@ -486,20 +496,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   heroAvatarText: { fontSize: 16, fontWeight: '900', color: colors.navy },
-  heroSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  heroSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
   heroPoolChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1,
-    borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 3,
-    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexGrow: 0, flexShrink: 1, maxWidth: '72%',
+    minHeight: 34, borderRadius: 14, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2,
+    backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
   },
   heroPoolDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
   heroPoolText: { fontSize: 13, fontWeight: '800', color: '#fff', flexShrink: 1, fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.2 },
   heroCountdownPill: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs, alignSelf: 'flex-start',
-    paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 3,
-    borderRadius: radius.full, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    minHeight: 34, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2,
+    borderRadius: 14, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   heroCountdownText: { fontSize: 13, color: '#fff', fontWeight: '800', fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.3 },
   heroGreeting: {
@@ -511,7 +522,7 @@ const styles = StyleSheet.create({
   // Liga card
   ligaCard: {
     marginHorizontal: spacing.md, marginTop: -spacing.xxl + 6, marginBottom: spacing.md,
-    backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.md,
+    backgroundColor: colors.surface, borderRadius: 16, padding: spacing.md,
     borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   ligaCardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
@@ -523,7 +534,14 @@ const styles = StyleSheet.create({
   ligaCardInfo: { flex: 1 },
   ligaCardLabel: { fontSize: 9, fontWeight: '800', color: colors.textMuted, letterSpacing: 1, fontFamily: 'BarlowCondensed_600SemiBold' },
   ligaCardName: { fontSize: 17, fontWeight: '900', color: colors.text, fontFamily: 'BarlowCondensed_800ExtraBold', lineHeight: 19 },
-  ligaCardFraction: { fontSize: 18, fontWeight: '900', color: colors.primary, fontFamily: 'BarlowCondensed_800ExtraBold', lineHeight: 20 },
+  ligaMembersBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#F3F4F4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  ligaMembersText: { fontSize: 11, color: '#4F5C57', fontWeight: '800', fontFamily: 'BarlowCondensed_700Bold' },
+  ligaProgressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
+  ligaProgressLabel: { fontSize: 13, color: '#4F5C57', fontWeight: '700', fontFamily: 'BarlowCondensed_700Bold' },
+  ligaCardFraction: { fontSize: 26, fontWeight: '900', color: '#0C5034', fontFamily: 'BarlowCondensed_900Black', lineHeight: 24 },
   ligaProgressTrack: { height: 4, backgroundColor: colors.borderLight, borderRadius: radius.full, overflow: 'hidden', marginTop: spacing.xs },
   ligaProgressFill: { height: 4, backgroundColor: colors.primary, borderRadius: radius.full },
   ligaWarningRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, backgroundColor: '#F7F2E7', borderRadius: radius.md, padding: spacing.xs },
@@ -532,7 +550,7 @@ const styles = StyleSheet.create({
   // TU POSICIÓN
   positionCard: {
     marginHorizontal: spacing.md, marginBottom: spacing.md,
-    backgroundColor: colors.primaryDark, borderRadius: radius.xl, padding: spacing.md,
+    backgroundColor: '#0D5A3A', borderRadius: 16, padding: spacing.md,
     overflow: 'hidden', ...shadows.lg,
   },
   positionGlow: {
@@ -570,7 +588,7 @@ const styles = StyleSheet.create({
   primaryCtaWrap: { paddingHorizontal: spacing.md, marginBottom: spacing.md },
   primaryCta: {
     backgroundColor: colors.accent,
-    borderRadius: radius.lg,
+    borderRadius: 16,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
