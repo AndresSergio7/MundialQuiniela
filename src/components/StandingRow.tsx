@@ -57,9 +57,16 @@ export function StandingRow({
 
       <View style={styles.userInfo}>
         <View style={styles.nameRow}>
-          <Text style={styles.username} numberOfLines={1}>{standing.profile?.username ?? 'Unknown'}</Text>
+          <Text style={styles.displayName} numberOfLines={1}>
+            {standing.profile?.full_name ?? standing.profile?.username ?? 'Unknown'}
+          </Text>
           {isCurrentUser && <Text style={styles.youTag}>TÚ</Text>}
         </View>
+        {standing.profile?.full_name && standing.profile?.username && (
+          <Text style={styles.usernameHandle} numberOfLines={1}>
+            @{standing.profile.username}
+          </Text>
+        )}
         <Text style={styles.subtitle}>
           🎯 {standing.exact_scores} · {precision}%
         </Text>
@@ -128,11 +135,18 @@ const styles = StyleSheet.create({
 
   userInfo: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  username: {
+  displayName: {
     fontSize: 18,
     fontWeight: '800',
     color: colors.text,
     fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  usernameHandle: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '600',
+    fontFamily: 'BarlowCondensed_600SemiBold',
+    marginTop: -1,
   },
   youTag: {
     fontSize: 18,

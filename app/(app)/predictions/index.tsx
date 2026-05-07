@@ -28,7 +28,7 @@ import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { MatchRow } from '@/components/MatchRow';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
-import { getCountryFlagFallback, getCountryFlagSvgUrl } from '@/lib/flags';
+import { getCountryFlagFallback, getCountryFlagSvgUrl, getCountryFlagPngUrl } from '@/lib/flags';
 import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
 type LocalScores = Record<string, { home: string; away: string }>;
@@ -99,64 +99,19 @@ function buildProjectedGroupTable(matches: Match[], localScores: LocalScores): G
 }
 
 function GroupFlag({ code }: { code: string }) {
-  const uri = getCountryFlagSvgUrl(code);
   const fallback = getCountryFlagFallback(code);
+  // Web soporta SVG; mobile solo soporta PNG con Image nativo
+  const uri = Platform.OS === 'web'
+    ? getCountryFlagSvgUrl(code)
+    : getCountryFlagPngUrl(code);
 
   if (!uri) {
     return <Text style={styles.groupPreviewFlag}>{fallback}</Text>;
   }
 
-  if (Platform.OS === 'web') {
-    return <Image source={{ uri }} style={styles.groupPreviewFlagImage} resizeMode="cover" />;
-  }
-
   return <Image source={{ uri }} style={styles.groupPreviewFlagImage} resizeMode="cover" />;
 }
 
-interface QuickActionChipProps {
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-  tone?: 'primary' | 'accent' | 'soft';
-  style?: object;
-}
-
-function QuickActionChip({
-  title,
-  icon,
-  onPress,
-  disabled = false,
-  loading = false,
-  tone = 'soft',
-  style,
-}: QuickActionChipProps) {
-  const isDisabled = disabled || loading;
-  const chipToneStyle =
-    tone === 'primary' ? styles.quickActionChipPrimary : tone === 'accent' ? styles.quickActionChipAccent : styles.quickActionChipSoft;
-  const iconToneStyle =
-    tone === 'primary' ? styles.quickActionIconPrimary : tone === 'accent' ? styles.quickActionIconAccent : styles.quickActionIconSoft;
-  const iconColor = tone === 'primary' ? '#FFFFFF' : tone === 'accent' ? colors.navy : colors.primary;
-  const textToneStyle =
-    tone === 'primary' ? styles.quickActionTextPrimary : tone === 'accent' ? styles.quickActionTextAccent : styles.quickActionTextSoft;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.86}
-      onPress={onPress}
-      disabled={isDisabled}
-      style={[styles.quickActionChip, chipToneStyle, isDisabled && styles.quickActionChipDisabled, style]}
-    >
-      <View style={[styles.quickActionIconWrap, iconToneStyle]}>
-        {loading ? <ActivityIndicator size="small" color={iconColor} /> : <Ionicons name={icon} size={15} color={iconColor} />}
-      </View>
-      <Text numberOfLines={1} style={[styles.quickActionText, textToneStyle]}>
-        {title}
-      </Text>
-    </TouchableOpacity>
-  );
-}
 
 export default function PredictionsScreen() {
   const { user } = useAuthStore();
@@ -183,7 +138,7 @@ export default function PredictionsScreen() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importablePools, setImportablePools] = useState<Pool[]>([]);
   const [importing, setImporting] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
+  const [showFabMenu, setShowFabMenu] = useState(false);
 
   const isFinal = submission?.is_final === true;
   const isLocked = tournamentLocked;
@@ -470,16 +425,18 @@ export default function PredictionsScreen() {
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${pct}%` }]} />
         </View>
-        {isFinal && (
+        {isFinal && !tournamentLocked && (
           <View style={[styles.submittedInlineBadge, { marginTop: spacing.xs }]}>
             <Ionicons name="checkmark-circle" size={14} color={colors.success} />
             <Text style={styles.submittedInlineText}>Enviada — puedes seguir editando</Text>
           </View>
         )}
-        {tournamentLocked && !isFinal && (
+        {tournamentLocked && (
           <View style={[styles.submittedInlineBadge, { marginTop: spacing.xs }]}>
             <Ionicons name="shield-checkmark" size={14} color={colors.accent} />
-            <Text style={styles.submittedInlineText}>El torneo ya inició — solo lectura</Text>
+            <Text style={styles.submittedInlineText}>
+              {isFinal ? 'Quiniela enviada — torneo en curso' : 'El torneo ya inició — solo lectura'}
+            </Text>
           </View>
         )}
       </View>
@@ -524,9 +481,6 @@ export default function PredictionsScreen() {
             <View>
               <Text style={styles.groupPreviewEyebrow}>CLASIFICACIÓN PROYECTADA</Text>
               <Text style={styles.groupPreviewTitle}>Grupo {activeGroup}</Text>
-            </View>
-            <View style={styles.groupPreviewBadge}>
-              <Text style={styles.groupPreviewBadgeText}>Preview</Text>
             </View>
           </View>
 
@@ -646,85 +600,95 @@ export default function PredictionsScreen() {
       )}
 
       {!loading && (
-        <View pointerEvents="box-none" style={[styles.floatingWrap, { bottom: insets.bottom + 76 }]}>
-          <TouchableOpacity
-            style={styles.fabButton}
-            activeOpacity={0.88}
-            onPress={() => setShowQuickActions(true)}
-          >
-            <View style={styles.fabIconWrap}>
-              <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
+        <>
+          {/* Backdrop para cerrar el menú */}
+          {showFabMenu && (
+            <TouchableOpacity
+              style={styles.fabBackdrop}
+              activeOpacity={1}
+              onPress={() => setShowFabMenu(false)}
+            />
+          )}
 
-      <Modal visible={showQuickActions} transparent animationType="fade" onRequestClose={() => setShowQuickActions(false)}>
-        <TouchableOpacity
-          activeOpacity={1}
-          style={styles.quickSheetOverlay}
-          onPress={() => setShowQuickActions(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.quickSheet} onPress={() => {}}>
-            <View style={styles.quickSheetHeader}>
-              <View>
-                <Text style={styles.quickSheetTitle}>Acciones rápidas</Text>
-                <Text style={styles.quickSheetMeta}>{filledCount}/{matches.length} llenados · autoguardado activo</Text>
-              </View>
-              <TouchableOpacity style={styles.quickSheetClose} onPress={() => setShowQuickActions(false)}>
-                <Ionicons name="close" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.floatingButtonsStack}>
-              {showEditActions && (
-                <View style={styles.floatingButtonsRow}>
-                  <QuickActionChip
-                    title={isFinal ? 'Reenviar' : 'Enviar'}
-                    icon="send"
-                    tone="accent"
-                    onPress={() => {
-                      setShowQuickActions(false);
-                      setShowConfirmSubmit(true);
-                    }}
-                    disabled={!allFilled || submitting || importing || autosaveStatus === 'saving'}
-                    style={styles.quickActionGrow}
-                  />
-                </View>
-              )}
-
-              <View style={styles.floatingButtonsRow}>
+          <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: insets.bottom + 64 }]}>
+            {/* Opciones expandibles */}
+            {showFabMenu && (
+              <View style={styles.fabMenu}>
+                {/* Enviar / Reenviar */}
                 {showEditActions && (
-                  <QuickActionChip
-                    title={importing ? 'Importando…' : 'Importar'}
-                    icon="copy-outline"
-                    tone="soft"
-                    onPress={() => {
-                      setShowQuickActions(false);
-                      handleImportOpen();
-                    }}
-                    loading={importing}
-                    disabled={submitting || importing || autosaveStatus === 'saving'}
-                    style={styles.quickActionGrow}
-                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.fabMenuItem,
+                      styles.fabMenuItemAccent,
+                      (!allFilled || submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
+                    ]}
+                    onPress={() => { setShowFabMenu(false); setShowConfirmSubmit(true); }}
+                    disabled={!allFilled || submitting || importing || autosaveStatus === 'saving'}
+                    activeOpacity={0.82}
+                  >
+                    {submitting
+                      ? <ActivityIndicator size="small" color={colors.navy} />
+                      : <Ionicons name="send" size={16} color={colors.navy} />
+                    }
+                    <Text style={styles.fabMenuItemTextAccent}>
+                      {isFinal ? 'Reenviar quiniela' : 'Enviar quiniela'}
+                    </Text>
+                  </TouchableOpacity>
                 )}
-                <QuickActionChip
-                  title={exportingPdf ? 'Generando…' : 'PDF'}
-                  icon="print-outline"
-                  tone="soft"
-                  onPress={() => {
-                    setShowQuickActions(false);
-                    handleExportPdf();
-                  }}
-                  loading={exportingPdf}
+
+                {/* Importar */}
+                {showEditActions && (
+                  <TouchableOpacity
+                    style={[
+                      styles.fabMenuItem,
+                      (submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
+                    ]}
+                    onPress={() => { setShowFabMenu(false); handleImportOpen(); }}
+                    disabled={submitting || importing || autosaveStatus === 'saving'}
+                    activeOpacity={0.82}
+                  >
+                    {importing
+                      ? <ActivityIndicator size="small" color={colors.primary} />
+                      : <Ionicons name="copy-outline" size={16} color={colors.primary} />
+                    }
+                    <Text style={styles.fabMenuItemText}>Importar predicciones</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* PDF */}
+                <TouchableOpacity
+                  style={[
+                    styles.fabMenuItem,
+                    (printableRows.length === 0 || exportingPdf) && styles.fabMenuItemDisabled,
+                  ]}
+                  onPress={() => { setShowFabMenu(false); handleExportPdf(); }}
                   disabled={printableRows.length === 0 || exportingPdf}
-                  style={styles.quickActionGrow}
-                />
+                  activeOpacity={0.82}
+                >
+                  {exportingPdf
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+                  }
+                  <Text style={styles.fabMenuItemText}>Descargar PDF</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+            )}
+
+            {/* Botón FAB */}
+            <TouchableOpacity
+              style={[styles.fab, showFabMenu && styles.fabActive]}
+              activeOpacity={0.85}
+              onPress={() => setShowFabMenu(v => !v)}
+            >
+              <Ionicons
+                name={showFabMenu ? 'close' : 'flash'}
+                size={22}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
       {/* Confirm submit */}
       <Modal visible={showConfirmSubmit} transparent animationType="fade">
@@ -1005,14 +969,57 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
   },
-  floatingWrap: {
+  // FAB expandible
+  fabBackdrop: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 10,
+  },
+  fabWrap: {
     position: 'absolute',
     right: spacing.md,
+    zIndex: 11,
+    alignItems: 'flex-end',
   },
-  fabButton: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  fabMenu: {
+    marginBottom: spacing.sm,
+    gap: spacing.xs + 2,
+    alignItems: 'flex-end',
+  },
+  fabMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: '#D3E4D9',
+    minWidth: 190,
+    ...shadows.md,
+  },
+  fabMenuItemAccent: {
+    backgroundColor: colors.accent,
+    borderColor: '#C69812',
+  },
+  fabMenuItemDisabled: { opacity: 0.4 },
+  fabMenuItemText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.primaryDark,
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  fabMenuItemTextAccent: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.navy,
+    fontFamily: 'BarlowCondensed_800ExtraBold',
+  },
+  fab: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#0D5A3A',
     borderWidth: 1,
     borderColor: '#0A492F',
@@ -1020,109 +1027,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadows.md,
   },
-  fabIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  fabActive: {
+    backgroundColor: '#444F57',
+    borderColor: '#2E363C',
   },
-  quickSheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(13,27,42,0.28)',
-    justifyContent: 'flex-end',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  quickSheet: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#D6E4DA',
-    padding: spacing.sm,
-    gap: spacing.xs + 2,
-    ...shadows.sm,
-  },
-  quickSheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-  },
-  quickSheetTitle: {
-    fontSize: 10,
-    color: '#60756A',
-    fontWeight: '800',
-    letterSpacing: 0.3,
-    fontFamily: 'BarlowCondensed_700Bold',
-  },
-  quickSheetMeta: {
-    fontSize: 11,
-    color: '#4D6458',
-    fontWeight: '800',
-    fontFamily: 'BarlowCondensed_700Bold',
-  },
-  quickSheetClose: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F7F4',
-  },
-  floatingButtonsStack: { gap: spacing.xs + 2 },
-  floatingButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  quickActionGrow: { flex: 1 },
-  quickActionChip: {
-    minHeight: 42,
-    borderRadius: 13,
-    paddingHorizontal: spacing.sm + 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs + 1,
-  },
-  quickActionChipPrimary: {
-    backgroundColor: '#0D5A3A',
-    borderWidth: 1,
-    borderColor: '#0A492F',
-    ...shadows.sm,
-  },
-  quickActionChipAccent: {
-    backgroundColor: colors.accent,
-    borderWidth: 1,
-    borderColor: '#C69812',
-    ...shadows.sm,
-  },
-  quickActionChipSoft: {
-    backgroundColor: '#F6FAF7',
-    borderWidth: 1,
-    borderColor: '#CFE0D4',
-  },
-  quickActionChipDisabled: { opacity: 0.55 },
-  quickActionIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickActionIconPrimary: { backgroundColor: 'rgba(255,255,255,0.16)' },
-  quickActionIconAccent: { backgroundColor: 'rgba(13,27,42,0.14)' },
-  quickActionIconSoft: { backgroundColor: '#E9F2EC' },
-  quickActionText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.1,
-    fontFamily: 'BarlowCondensed_700Bold',
-  },
-  quickActionTextPrimary: { color: '#FFFFFF' },
-  quickActionTextAccent: { color: colors.navy },
-  quickActionTextSoft: { color: '#0D5A3A' },
 
   groupPreviewCard: {
     backgroundColor: colors.surface,

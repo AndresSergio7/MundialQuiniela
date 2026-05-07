@@ -7,6 +7,7 @@ import {
   Share,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
   Platform,
   Linking,
 } from 'react-native';
@@ -36,6 +37,7 @@ export default function InvitesScreen() {
 
   const [members, setMembers] = useState<PoolMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState(false);
@@ -46,10 +48,10 @@ export default function InvitesScreen() {
 
   const isAdmin = currentPool?.admin_id === user?.id;
 
-  async function loadData(pool?: Pool) {
+  async function loadData(pool?: Pool, silent?: boolean) {
     const activePool = pool ?? currentPool;
     if (!activePool) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const m = await getPoolMembers(activePool.id);
@@ -63,8 +65,14 @@ export default function InvitesScreen() {
     } catch {
       setError('No se pudo cargar la información de la liga.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadData(undefined, true);
+    setRefreshing(false);
   }
 
   function handlePoolSelect(pool: Pool) {
@@ -258,6 +266,14 @@ export default function InvitesScreen() {
           data={members}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
           ListHeaderComponent={
             <View>
               {isAdmin && (

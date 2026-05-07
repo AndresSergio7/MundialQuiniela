@@ -250,6 +250,26 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* ── Sin liga: CTA comprar liga ── */}
+      {pools.length === 0 && !loading && (
+        <View style={styles.noLigaCard}>
+          <View style={styles.noLigaIcon}>
+            <Ionicons name="trophy-outline" size={28} color={colors.primary} />
+          </View>
+          <View style={styles.noLigaText}>
+            <Text style={styles.noLigaTitle}>Aún no tienes una liga</Text>
+            <Text style={styles.noLigaSub}>Crea tu propia liga o únete a una existente.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.noLigaBtn}
+            onPress={() => router.push('/(app)/purchase')}
+          >
+            <Text style={styles.noLigaBtnText}>Comprar liga</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.navy} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Liga Activa card ── */}
       {currentPool && (
         <View style={styles.ligaCard}>
@@ -258,7 +278,7 @@ export default function HomeScreen() {
               <Ionicons name="football-outline" size={18} color={colors.primary} />
             </View>
             <View style={styles.ligaCardInfo}>
-              <Text style={styles.ligaCardLabel}>LIGA ACTIVA</Text>
+              <Text style={styles.ligaCardLabel}>MIS LIGAS</Text>
               <Text style={styles.ligaCardName}>{currentPool.name}</Text>
             </View>
             <View style={styles.ligaMembersBadge}>
@@ -368,7 +388,7 @@ export default function HomeScreen() {
         >
           {!hasAccess && <Ionicons name="lock-closed" size={16} color={colors.navy} />}
           <Text style={styles.primaryCtaText}>
-            {hasAccess ? (remainingPredictions > 0 ? `Completar ${remainingPredictions} predicciones` : 'Ver predicciones') : 'Compra tu quiniela y participa'}
+            {hasAccess ? (remainingPredictions > 0 ? `Completar ${remainingPredictions} predicciones` : 'Ver predicciones') : 'Comprar quiniela'}
           </Text>
           <Ionicons name="chevron-forward" size={16} color={colors.navy} />
         </TouchableOpacity>
@@ -604,6 +624,28 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     marginTop: 6,
   },
+
+  // Sin liga card
+  noLigaCard: {
+    marginHorizontal: spacing.md, marginTop: -spacing.xxl + 6, marginBottom: spacing.md,
+    backgroundColor: colors.surface, borderRadius: 16, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    flexDirection: 'column', gap: spacing.sm,
+  },
+  noLigaIcon: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: '#EAF6EE', borderWidth: 1, borderColor: 'rgba(10,107,53,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  noLigaText: { flex: 1 },
+  noLigaTitle: { fontSize: 15, fontWeight: '800', color: colors.text, fontFamily: 'BarlowCondensed_800ExtraBold' },
+  noLigaSub: { fontSize: 12, color: colors.textMuted, marginTop: 2, fontFamily: 'BarlowCondensed_600SemiBold' },
+  noLigaBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: colors.accent, borderRadius: radius.full,
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+  },
+  noLigaBtnText: { fontSize: 13, fontWeight: '900', color: colors.navy, fontFamily: 'BarlowCondensed_800ExtraBold' },
 
   // Liga card
   ligaCard: {

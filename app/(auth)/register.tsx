@@ -29,8 +29,8 @@ export default function RegisterScreen() {
 
   function validate(): boolean {
     const e: Record<string, string> = {};
-    if (username.length < 3) e.username = 'El usuario debe tener al menos 3 caracteres.';
-    else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Solo letras, números y guiones bajos.';
+    if (username.trim().length < 3) e.username = 'El usuario debe tener al menos 3 caracteres.';
+    else if (!/^[a-zA-Z0-9_ ]+$/.test(username)) e.username = 'Solo letras, números, guiones bajos y espacios.';
     if (!email.trim() || !email.includes('@')) e.email = 'Ingresa un email válido.';
     if (password.length < 6) e.password = 'La contraseña debe tener al menos 6 caracteres.';
     setFieldErrors(e);
@@ -124,7 +124,7 @@ export default function RegisterScreen() {
                   label="Nombre de Usuario"
                   value={username}
                   onChangeText={(t) => { setUsername(t); setErrorMsg(''); }}
-                  placeholder="ej. el_crack_10"
+                  placeholder="ej. El Crack 10"
                   autoCapitalize="none"
                   autoCorrect={false}
                   error={fieldErrors.username}

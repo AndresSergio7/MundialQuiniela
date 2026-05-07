@@ -26,7 +26,7 @@ const SCORE_RULES = [
   {
     title: '3 puntos',
     subtitle: 'Solo resultado correcto',
-    body: 'Adivinas quién gana o si empatan, pero no aciertas ningún marcador exacto.',
+    body: 'Adivinas quién gana pero no aciertas ningún marcador exacto.',
     tone: 'soft',
   },
   {
@@ -81,7 +81,10 @@ export default function RulesScreen() {
           Una vez cerrado el periodo de predicciones, no se podrán hacer cambios.
         </Text>
         <Text style={styles.paragraph}>
-          Puedes guardar tu progreso y continuar más tarde antes del cierre.
+          Tus predicciones se guardan automáticamente. Puedes salir y continuar más tarde antes de la fecha límite.
+        </Text>
+        <Text style={styles.paragraph}>
+          Para participar, debes completar el 100% de tu quiniela antes de la fecha límite. Si tu quiniela queda incompleta, no podrás participar.
         </Text>
       </View>
 

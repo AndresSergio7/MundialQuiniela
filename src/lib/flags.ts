@@ -2,6 +2,7 @@ import { hasFlag } from 'country-flag-icons';
 import getUnicodeFlagIcon from 'country-flag-icons/unicode';
 
 const FLAG_CDN_BASE = 'https://purecatamphetamine.github.io/country-flag-icons/3x2';
+const FLAG_PNG_CDN_BASE = 'https://flagcdn.com/w40';
 
 const ISO3_TO_FLAG_CODE: Record<string, string> = {
   MEX: 'MX', CRC: 'CR', ZAF: 'ZA', CAN: 'CA', BIH: 'BA', QAT: 'QA',
@@ -32,6 +33,14 @@ export function getCountryFlagSvgUrl(code: string) {
   const flagCode = toCountryFlagCode(code);
   if (!flagCode) return null;
   return `${FLAG_CDN_BASE}/${flagCode}.svg`;
+}
+
+// PNG via flagcdn.com — funciona en React Native mobile (no soporta SVG remoto)
+// flagcdn solo acepta códigos ISO2 estándar, no variantes como GB-SCT
+export function getCountryFlagPngUrl(code: string) {
+  const flagCode = toCountryFlagCode(code);
+  if (!flagCode || flagCode.includes('-')) return null;
+  return `${FLAG_PNG_CDN_BASE}/${flagCode.toLowerCase()}.png`;
 }
 
 export function getCountryFlagFallback(code: string) {
