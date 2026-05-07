@@ -107,12 +107,30 @@ export async function savePredictions(
     is_locked: false,
   }));
 
-  if (!rows.length) return;
+  const matchIds = Object.keys(scores);
+
+  if (!rows.length) {
+    const { error: deleteError } = await supabase
+      .from('predictions')
+      .delete()
+      .eq('pool_id', poolId)
+      .eq('user_id', userId);
+    if (deleteError) throw new AppError('SAVE_PREDICTIONS_FAILED', deleteError.message);
+    return;
+  }
 
   const { error } = await supabase
     .from('predictions')
     .upsert(rows, { onConflict: 'pool_id,user_id,match_id' });
   if (error) throw new AppError('SAVE_PREDICTIONS_FAILED', error.message);
+
+  const { error: deleteError } = await supabase
+    .from('predictions')
+    .delete()
+    .eq('pool_id', poolId)
+    .eq('user_id', userId)
+    .not('match_id', 'in', `(${matchIds.join(',')})`);
+  if (deleteError) throw new AppError('SAVE_PREDICTIONS_FAILED', deleteError.message);
 }
 
 export async function fetchSubmission(poolId: string, userId: string): Promise<Submission | null> {

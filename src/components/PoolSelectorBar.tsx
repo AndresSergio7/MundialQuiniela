@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePoolStore } from '@/store/pool';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
@@ -27,6 +28,7 @@ export function PoolSelectorBar({
   showDecorations = true,
 }: PoolSelectorBarProps) {
   const { currentPool, pools, setCurrentPool } = usePoolStore();
+  const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -51,11 +53,21 @@ export function PoolSelectorBar({
 
         <View style={styles.headerTopRow}>
           <Text style={styles.label}>{contextLabel}</Text>
-          {!!rightBadgeText && (
-            <View style={styles.rightBadge}>
-              <Text style={styles.rightBadgeText}>{rightBadgeText}</Text>
-            </View>
-          )}
+          <View style={styles.headerActions}>
+            {!!rightBadgeText && (
+              <View style={styles.rightBadge}>
+                <Text style={styles.rightBadgeText}>{rightBadgeText}</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.rulesBtn}
+              onPress={() => router.push('/(app)/rules')}
+              activeOpacity={0.84}
+            >
+              <Ionicons name="help-circle-outline" size={15} color={colors.primaryDark} />
+              <Text style={styles.rulesBtnText}>Reglas</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity
@@ -157,6 +169,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexShrink: 1,
+  },
   label: {
     fontSize: 12,
     fontWeight: '800',
@@ -179,6 +197,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '700',
+    fontFamily: 'BarlowCondensed_700Bold',
+  },
+  rulesBtn: {
+    minHeight: 26,
+    borderRadius: 13,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  rulesBtnText: {
+    fontSize: 11,
+    color: colors.primaryDark,
+    fontWeight: '800',
     fontFamily: 'BarlowCondensed_700Bold',
   },
   selectorChip: {

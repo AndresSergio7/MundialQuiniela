@@ -13,12 +13,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { getStandingsWithAllMembers } from '@/services/standings.service';
+import { recalculateStandings } from '@/services/results.service';
 import { getPoolMembers } from '@/services/pools.service';
 import { fetchPredictionsForMember } from '@/services/predictions.service';
 import { fetchAllMatches } from '@/services/matches.service';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { StandingRow } from '@/components/StandingRow';
+import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { saveRanks, loadPreviousRanks } from '@/lib/rankHistory';
 import type { Standing, Pool } from '@/types';
@@ -37,6 +39,8 @@ export default function StandingsScreen() {
     const activePool = pool ?? currentPool;
     if (!activePool) return;
     setLoading(true);
+    // Recalculate standings from current match results before reading the table
+    try { await recalculateStandings(activePool.id); } catch { /* non-fatal */ }
     const [data, poolMembers, allMatches] = await Promise.all([
       getStandingsWithAllMembers(activePool.id),
       getPoolMembers(activePool.id),
@@ -165,7 +169,13 @@ export default function StandingsScreen() {
                         <Text style={styles.podiumRankChipText}>#2</Text>
                       </View>
                       <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarSilver]}>
-                        <Text style={styles.standingsPodiumAvatarGlyph}>{second ? '⚡' : '—'}</Text>
+                        <UserAvatar
+                          avatarUrl={second?.profile?.avatar_url}
+                          name={second?.profile?.username}
+                          rank={2}
+                          size={76}
+                          backgroundColor="#fff"
+                        />
                       </View>
                       <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(second)}</Text>
                       <Text style={styles.standingsPodiumPoints}>{podiumPoints(second)}</Text>
@@ -177,7 +187,13 @@ export default function StandingsScreen() {
                       </View>
                       <Text style={styles.standingsPodiumCrown}>♛</Text>
                       <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarGold]}>
-                        <Text style={styles.standingsPodiumAvatarGlyph}>{(first?.profile?.username?.[0] ?? '—').toUpperCase()}</Text>
+                        <UserAvatar
+                          avatarUrl={first?.profile?.avatar_url}
+                          name={first?.profile?.username}
+                          rank={1}
+                          size={76}
+                          backgroundColor="#fff"
+                        />
                       </View>
                       <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(first)}</Text>
                       <Text style={styles.standingsPodiumPoints}>{podiumPoints(first)}</Text>
@@ -188,7 +204,13 @@ export default function StandingsScreen() {
                         <Text style={styles.podiumRankChipText}>#3</Text>
                       </View>
                       <View style={[styles.standingsPodiumAvatar, styles.standingsPodiumAvatarBronze]}>
-                        <Text style={styles.standingsPodiumAvatarGlyph}>{third ? '🌟' : '—'}</Text>
+                        <UserAvatar
+                          avatarUrl={third?.profile?.avatar_url}
+                          name={third?.profile?.username}
+                          rank={3}
+                          size={76}
+                          backgroundColor="#fff"
+                        />
                       </View>
                       <Text style={styles.standingsPodiumName} numberOfLines={1}>{podiumName(third)}</Text>
                       <Text style={styles.standingsPodiumPoints}>{podiumPoints(third)}</Text>

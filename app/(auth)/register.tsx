@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AppError } from '@/lib/errors';
-import { signUp } from '@/services/auth.service';
+import { signUp, checkUsernameAvailable } from '@/services/auth.service';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
@@ -44,6 +44,13 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
+      // Check username uniqueness before creating the auth user
+      const available = await checkUsernameAvailable(username.trim());
+      if (!available) {
+        setFieldErrors((e) => ({ ...e, username: 'Ese nombre de usuario ya está en uso.' }));
+        return;
+      }
+
       const session = await signUp(email.trim(), password, {
         username: username.trim(),
         fullName: fullName.trim(),

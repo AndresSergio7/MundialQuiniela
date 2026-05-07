@@ -17,6 +17,7 @@ import { usePoolStore } from '@/store/pool';
 import { generateInviteLink } from '@/services/invites.service';
 import { fetchPoolById, getPoolMembers, listMyPools, removeMember } from '@/services/pools.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
+import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { POOL_PLANS } from '@/types';
 import type { PoolMember, Pool } from '@/types';
@@ -271,10 +272,15 @@ export default function InvitesScreen() {
                     <View style={styles.membersSummaryRow}>
                       <View style={styles.avatarStackRow}>
                         {memberPreview.map((member, idx) => (
-                          <View key={member.id} style={[styles.stackAvatar, { marginLeft: idx === 0 ? 0 : -10, backgroundColor: avatarColor(member.profile?.username ?? member.id) }]}>
-                            <Text style={styles.stackAvatarText}>
-                              {(member.profile?.username?.[0] ?? '?').toUpperCase()}
-                            </Text>
+                          <View key={member.id} style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 10 - idx }}>
+                            <UserAvatar
+                              avatarUrl={member.profile?.avatar_url}
+                              name={member.profile?.username}
+                              size={36}
+                              borderColor="#0C402A"
+                              borderWidth={2}
+                              backgroundColor={avatarColor(member.profile?.username ?? member.id)}
+                            />
                           </View>
                         ))}
                         {extraMembers > 0 && (
@@ -380,9 +386,12 @@ export default function InvitesScreen() {
             return (
                <View style={styles.memberCard}>
                  <View style={styles.memberRow}>
-                   <View style={[styles.avatar, { backgroundColor: isMe ? '#ECEFF1' : avatarColor(member.profile?.username ?? member.id) }]}>
-                     <Text style={[styles.avatarText, { color: isMe ? colors.text : '#fff' }]}>{isMe ? '⚡' : initial}</Text>
-                   </View>
+                   <UserAvatar
+                     avatarUrl={member.profile?.avatar_url}
+                     name={member.profile?.username}
+                     size={48}
+                     backgroundColor={isMe ? '#ECEFF1' : avatarColor(member.profile?.username ?? member.id)}
+                   />
                    <View style={styles.memberInfo}>
                      <View style={styles.memberNameRow}>
                        <Text style={styles.memberName}>

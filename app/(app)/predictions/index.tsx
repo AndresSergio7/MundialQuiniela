@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   RefreshControl,
   Modal,
   TouchableOpacity,
+  Image,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,9 +28,90 @@ import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { MatchRow } from '@/components/MatchRow';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import { exportPredictionsPdf } from '@/lib/predictionsPdf';
+import { getCountryFlagFallback, getCountryFlagSvgUrl } from '@/lib/flags';
 import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
 type LocalScores = Record<string, { home: string; away: string }>;
+
+type GroupStandingRow = {
+  team: string;
+  teamCode: string;
+  played: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDiff: number;
+  points: number;
+};
+
+function buildProjectedGroupTable(matches: Match[], localScores: LocalScores): GroupStandingRow[] {
+  const rows = new Map<string, GroupStandingRow>();
+
+  function ensureTeam(team: string, teamCode: string) {
+    const existing = rows.get(team);
+    if (existing) {
+      if (!existing.teamCode && teamCode) existing.teamCode = teamCode;
+      return existing;
+    }
+    const next = { team, teamCode, played: 0, goalsFor: 0, goalsAgainst: 0, goalDiff: 0, points: 0 };
+    rows.set(team, next);
+    return next;
+  }
+
+  for (const match of matches) {
+    const home = ensureTeam(match.home_team, match.home_team_code);
+    const away = ensureTeam(match.away_team, match.away_team_code);
+    const local = localScores[match.id];
+    const hasLocalScore = local?.home !== '' && local?.away !== '';
+    if (!hasLocalScore) continue;
+    const homeScore = Number(local.home);
+    const awayScore = Number(local.away);
+
+    if (homeScore == null || awayScore == null) continue;
+
+    home.played += 1;
+    away.played += 1;
+    home.goalsFor += homeScore;
+    home.goalsAgainst += awayScore;
+    away.goalsFor += awayScore;
+    away.goalsAgainst += homeScore;
+
+    if (homeScore > awayScore) {
+      home.points += 3;
+    } else if (awayScore > homeScore) {
+      away.points += 3;
+    } else {
+      home.points += 1;
+      away.points += 1;
+    }
+  }
+
+  return Array.from(rows.values())
+    .map((row) => ({
+      ...row,
+      goalDiff: row.goalsFor - row.goalsAgainst,
+    }))
+    .sort((a, b) => (
+      b.points - a.points
+      || b.goalDiff - a.goalDiff
+      || b.goalsFor - a.goalsFor
+      || a.team.localeCompare(b.team)
+    ));
+}
+
+function GroupFlag({ code }: { code: string }) {
+  const uri = getCountryFlagSvgUrl(code);
+  const fallback = getCountryFlagFallback(code);
+
+  if (!uri) {
+    return <Text style={styles.groupPreviewFlag}>{fallback}</Text>;
+  }
+
+  if (Platform.OS === 'web') {
+    return <Image source={{ uri }} style={styles.groupPreviewFlagImage} resizeMode="cover" />;
+  }
+
+  return <Image source={{ uri }} style={styles.groupPreviewFlagImage} resizeMode="cover" />;
+}
 
 interface QuickActionChipProps {
   title: string;
@@ -79,17 +162,18 @@ export default function PredictionsScreen() {
   const { user } = useAuthStore();
   const { currentPool } = usePoolStore();
   const insets = useSafeAreaInsets();
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveQueueRef = useRef(Promise.resolve());
+  const hasDraftChangesRef = useRef(false);
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [localScores, setLocalScores] = useState<LocalScores>({});
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [mode, setMode] = useState<'view' | 'edit'>('edit');
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [savedOk, setSavedOk] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -108,9 +192,10 @@ export default function PredictionsScreen() {
     const activePool = pool ?? currentPool;
     if (!activePool || !user) return;
     setLoading(true);
+    hasDraftChangesRef.current = false;
     setError(null);
     setValidationErrors([]);
-    setSavedOk(false);
+    setAutosaveStatus('idle');
 
     const [allMatches, predictions, sub] = await Promise.all([
       fetchAllMatches(),
@@ -137,7 +222,6 @@ export default function PredictionsScreen() {
     const firstMatchMs = scheduledDates.length > 0 ? Math.min(...scheduledDates) : Infinity;
     const locked = anyStarted || Date.now() >= firstMatchMs - 60_000;
     setTournamentLocked(locked);
-    setMode(locked ? 'view' : 'edit');
     setLoading(false);
   }, [currentPool, user]);
 
@@ -148,8 +232,9 @@ export default function PredictionsScreen() {
 
   function handleScoreChange(matchId: string, side: 'home' | 'away', val: string) {
     const cleaned = val.replace(/[^0-9]/g, '').slice(0, 2);
+    hasDraftChangesRef.current = true;
     setLocalScores(prev => ({ ...prev, [matchId]: { ...prev[matchId], [side]: cleaned } }));
-    setError(null); setValidationErrors([]); setSavedOk(false);
+    setError(null); setValidationErrors([]); setAutosaveStatus('idle');
   }
 
   const filledCount = useMemo(
@@ -179,31 +264,41 @@ export default function PredictionsScreen() {
     return map;
   }
 
-  async function handleSaveAll() {
-    if (!currentPool || !user) return;
-    if (filledCount === 0) { setError('Ingresa al menos un resultado antes de guardar.'); return; }
-    setError(null); setValidationErrors([]); setSavedOk(false);
-    setSaving(true);
-    const result = await savePredictionsBulk(currentPool.id, user.id, buildPredictionMap());
-    setSaving(false);
-    if (!result.success) setError(result.error ?? 'Error al guardar. Intenta de nuevo.');
-    else setSavedOk(true);
+  async function persistPredictions(scores?: PredictionMap) {
+    if (!currentPool || !user) return false;
+    const payload = scores ?? buildPredictionMap();
+    const runSave = async () => {
+      setAutosaveStatus('saving');
+      const result = await savePredictionsBulk(currentPool.id, user.id, payload);
+      if (!result.success) {
+        setAutosaveStatus('error');
+        setError(result.error ?? 'Error al guardar automáticamente. Intenta de nuevo.');
+        return false;
+      }
+      hasDraftChangesRef.current = false;
+      setAutosaveStatus('saved');
+      setError(null);
+      return true;
+    };
+
+    const next = autosaveQueueRef.current.then(runSave, runSave);
+    autosaveQueueRef.current = next.then(() => undefined, () => undefined);
+    return next;
   }
 
   async function doSubmit() {
     if (!currentPool || !user) return;
-    setError(null); setValidationErrors([]); setSavedOk(false); setSubmitting(true);
-    const saveResult = await savePredictionsBulk(currentPool.id, user.id, buildPredictionMap());
-    if (!saveResult.success) {
+    setError(null); setValidationErrors([]); setAutosaveStatus('idle'); setSubmitting(true);
+    const saveResult = await persistPredictions();
+    if (!saveResult) {
       setSubmitting(false); setShowConfirmSubmit(false);
-      setError(saveResult.error ?? 'Error al guardar.'); return;
+      return;
     }
     const submitResult = await submitQuiniela(currentPool.id, user.id);
     setSubmitting(false); setShowConfirmSubmit(false);
     if (submitResult.success) {
       const sub = await getSubmissionStatus(currentPool.id, user.id);
       setSubmission(sub);
-      setMode('edit');
       setShowSuccessModal(true);
     } else {
       setValidationErrors(submitResult.errors);
@@ -260,14 +355,13 @@ export default function PredictionsScreen() {
       for (const p of preds) {
         newScores[p.match_id] = { home: String(p.home_score), away: String(p.away_score) };
       }
+      hasDraftChangesRef.current = false;
       setLocalScores(newScores);
       const predMap: PredictionMap = {};
       for (const p of preds) {
         predMap[p.match_id] = { home: p.home_score, away: p.away_score };
       }
-      await savePredictionsBulk(currentPool.id, user.id, predMap);
-      setSavedOk(true);
-      setError(null);
+      await persistPredictions(predMap);
     } catch {
       setError('No se pudo importar. Intenta de nuevo.');
     } finally {
@@ -294,6 +388,16 @@ export default function PredictionsScreen() {
       setActiveGroup(groupNames[0]);
     }
   }, [groupNames]);
+
+  const activeGroupMatches = useMemo(
+    () => (activeGroup ? groupedMatchMap[activeGroup] ?? [] : []),
+    [activeGroup, groupedMatchMap],
+  );
+
+  const projectedGroupTable = useMemo(
+    () => buildProjectedGroupTable(activeGroupMatches, localScores),
+    [activeGroupMatches, localScores],
+  );
 
   const groupStats = useMemo(
     () => groupNames.map(name => {
@@ -323,6 +427,25 @@ export default function PredictionsScreen() {
     const stat = groupStats.find(g => g.title === activeGroup);
     return stat ? stat.filled === stat.total : false;
   }, [activeGroup, groupStats]);
+
+  useEffect(() => {
+    if (!currentPool || !user || loading || tournamentLocked || !hasDraftChangesRef.current) {
+      return;
+    }
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void persistPredictions();
+    }, 700);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [currentPool?.id, user?.id, loading, tournamentLocked, localScores]);
+
+  useEffect(() => () => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+  }, []);
 
   const pct = matches.length > 0 ? Math.round((filledCount / matches.length) * 100) : 0;
   const showEditActions = !tournamentLocked;
@@ -395,6 +518,47 @@ export default function PredictionsScreen() {
         })}
       </ScrollView>
 
+      {activeGroup && projectedGroupTable.length > 0 && (
+        <View style={styles.groupPreviewCard}>
+          <View style={styles.groupPreviewHeader}>
+            <View>
+              <Text style={styles.groupPreviewEyebrow}>CLASIFICACIÓN PROYECTADA</Text>
+              <Text style={styles.groupPreviewTitle}>Grupo {activeGroup}</Text>
+            </View>
+            <View style={styles.groupPreviewBadge}>
+              <Text style={styles.groupPreviewBadgeText}>Preview</Text>
+            </View>
+          </View>
+
+          <View style={styles.groupPreviewTableHead}>
+            <Text style={[styles.groupPreviewCol, styles.groupPreviewColRank]}>#</Text>
+            <Text style={[styles.groupPreviewCol, styles.groupPreviewColTeam]}>Equipo</Text>
+            <Text style={styles.groupPreviewCol}>PJ</Text>
+            <Text style={styles.groupPreviewCol}>GF</Text>
+            <Text style={styles.groupPreviewCol}>GC</Text>
+            <Text style={styles.groupPreviewCol}>DG</Text>
+            <Text style={styles.groupPreviewColPts}>Pts</Text>
+          </View>
+
+          {projectedGroupTable.map((row, index) => (
+            <View key={row.team} style={styles.groupPreviewRow}>
+              <Text style={[styles.groupPreviewCell, styles.groupPreviewCellRank]}>{index + 1}</Text>
+              <View style={[styles.groupPreviewCell, styles.groupPreviewTeamCell]}>
+                <GroupFlag code={row.teamCode} />
+                <Text numberOfLines={1} style={styles.groupPreviewTeamName}>{row.team}</Text>
+              </View>
+              <Text style={styles.groupPreviewCell}>{row.played}</Text>
+              <Text style={styles.groupPreviewCell}>{row.goalsFor}</Text>
+              <Text style={styles.groupPreviewCell}>{row.goalsAgainst}</Text>
+              <Text style={styles.groupPreviewCell}>{row.goalDiff > 0 ? `+${row.goalDiff}` : String(row.goalDiff)}</Text>
+              <Text style={styles.groupPreviewCellPts}>{row.points}</Text>
+            </View>
+          ))}
+
+          <Text style={styles.groupPreviewNote}>Se calcula con tus marcadores guardados para este grupo.</Text>
+        </View>
+      )}
+
       {error && (
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle" size={14} color={colors.error} />
@@ -408,10 +572,22 @@ export default function PredictionsScreen() {
           ))}
         </View>
       )}
-      {savedOk && mode === 'edit' && (
+      {autosaveStatus === 'saving' && (
+        <View style={styles.autosaveBanner}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.autosaveText}>Guardando automáticamente…</Text>
+        </View>
+      )}
+      {autosaveStatus === 'saved' && !tournamentLocked && (
         <View style={styles.successBanner}>
           <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          <Text style={styles.successText}>Guardado</Text>
+          <Text style={styles.successText}>Guardado automáticamente</Text>
+        </View>
+      )}
+      {autosaveStatus === 'error' && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={14} color={colors.error} />
+          <Text style={styles.errorText}>No se pudo guardar automáticamente. Revisa tu conexión.</Text>
         </View>
       )}
     </View>
@@ -493,7 +669,7 @@ export default function PredictionsScreen() {
             <View style={styles.quickSheetHeader}>
               <View>
                 <Text style={styles.quickSheetTitle}>Acciones rápidas</Text>
-                <Text style={styles.quickSheetMeta}>{filledCount}/{matches.length} llenados</Text>
+                <Text style={styles.quickSheetMeta}>{filledCount}/{matches.length} llenados · autoguardado activo</Text>
               </View>
               <TouchableOpacity style={styles.quickSheetClose} onPress={() => setShowQuickActions(false)}>
                 <Ionicons name="close" size={18} color={colors.textMuted} />
@@ -504,18 +680,6 @@ export default function PredictionsScreen() {
               {showEditActions && (
                 <View style={styles.floatingButtonsRow}>
                   <QuickActionChip
-                    title={saving ? 'Guardando…' : 'Guardar'}
-                    icon="save-outline"
-                    tone="primary"
-                    onPress={() => {
-                      setShowQuickActions(false);
-                      handleSaveAll();
-                    }}
-                    loading={saving}
-                    disabled={filledCount === 0 || saving || submitting || importing}
-                    style={styles.quickActionGrow}
-                  />
-                  <QuickActionChip
                     title={isFinal ? 'Reenviar' : 'Enviar'}
                     icon="send"
                     tone="accent"
@@ -523,7 +687,7 @@ export default function PredictionsScreen() {
                       setShowQuickActions(false);
                       setShowConfirmSubmit(true);
                     }}
-                    disabled={!allFilled || saving || submitting || importing}
+                    disabled={!allFilled || submitting || importing || autosaveStatus === 'saving'}
                     style={styles.quickActionGrow}
                   />
                 </View>
@@ -540,7 +704,7 @@ export default function PredictionsScreen() {
                       handleImportOpen();
                     }}
                     loading={importing}
-                    disabled={saving || submitting || importing}
+                    disabled={submitting || importing || autosaveStatus === 'saving'}
                     style={styles.quickActionGrow}
                   />
                 )}
@@ -959,6 +1123,124 @@ const styles = StyleSheet.create({
   quickActionTextPrimary: { color: '#FFFFFF' },
   quickActionTextAccent: { color: colors.navy },
   quickActionTextSoft: { color: '#0D5A3A' },
+
+  groupPreviewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#DDE5DF',
+    padding: spacing.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  groupPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  groupPreviewEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    color: colors.primary,
+  },
+  groupPreviewTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 2,
+  },
+  groupPreviewBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accent + '60',
+  },
+  groupPreviewBadgeText: { fontSize: 11, fontWeight: '800', color: colors.navy },
+  groupPreviewTableHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8ECE9',
+    marginBottom: 4,
+  },
+  groupPreviewCol: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textMuted,
+    textAlign: 'center',
+    width: 28,
+  },
+  groupPreviewColRank: { width: 20, textAlign: 'left' },
+  groupPreviewColTeam: { flex: 1, textAlign: 'left', width: 'auto' },
+  groupPreviewColPts: { width: 32, textAlign: 'right' },
+  groupPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F4F2',
+  },
+  groupPreviewCell: {
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: '700',
+    textAlign: 'center',
+    width: 28,
+  },
+  groupPreviewCellRank: { width: 20, textAlign: 'left', color: colors.textMuted },
+  groupPreviewTeamCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    width: 'auto',
+    textAlign: 'left',
+  },
+  groupPreviewFlag: { fontSize: 16 },
+  groupPreviewFlagImage: {
+    width: 18,
+    height: 13,
+    borderRadius: 2,
+    backgroundColor: '#EEF2EF',
+  },
+  groupPreviewTeamName: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: '800',
+  },
+  groupPreviewCellPts: {
+    width: 32,
+    textAlign: 'right',
+    fontSize: 12,
+    fontWeight: '900',
+    color: colors.primaryDark,
+  },
+  groupPreviewNote: {
+    marginTop: spacing.xs,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+
+  autosaveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  autosaveText: { fontSize: 12, color: colors.primaryDark, fontWeight: '700' },
 
   modalOverlay: {
     flex: 1,

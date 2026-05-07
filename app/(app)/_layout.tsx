@@ -112,10 +112,16 @@ export default function AppLayout() {
           ...shadows.sm,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: '700',
-          letterSpacing: 0.45,
-          marginTop: 2,
+          letterSpacing: 0.25,
+          marginTop: 1,
+          lineHeight: 10,
+          maxWidth: 72,
+          textAlign: 'center',
+        },
+        tabBarItemStyle: {
+          paddingHorizontal: 0,
         },
       };
       }}
@@ -186,6 +192,12 @@ export default function AppLayout() {
         name="profile/index"
         options={{
           title: 'Mi perfil',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="rules"
+        options={{
           href: null,
         }}
       />

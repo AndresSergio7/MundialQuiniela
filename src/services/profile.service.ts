@@ -27,13 +27,25 @@ export async function getMyProfile(userId: string): Promise<Profile | null> {
 export async function uploadAvatar(userId: string, localUri: string): Promise<{ url: string | null; error: string | null }> {
   try {
     const response = await fetch(localUri);
-    const blob = await response.blob();
-    const ext = localUri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    // Use ArrayBuffer instead of Blob — Blob references don't upload correctly
+    // on Android's React Native fetch implementation.
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    // Map MIME type to safe extension
+    const mimeToExt: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    };
+    let ext = mimeToExt[contentType.toLowerCase()] ?? 'jpg';
+    ext = ext.replace(/[^a-z0-9]/g, '');
     const path = `${userId}/avatar.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(path, blob, { upsert: true, contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
+      .upload(path, arrayBuffer, { upsert: true, contentType });
 
     if (uploadError) return { url: null, error: uploadError.message };
 

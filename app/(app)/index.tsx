@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,7 @@ import { fetchAllMatches } from '@/services/matches.service';
 import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { getStandingsWithAllMembers } from '@/services/standings.service';
 import { Button } from '@/components/ui/Button';
+import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, radius, shadows } from '@/components/ui/theme';
 import type { Entitlement, Pool, Profile, Standing, Submission, Match } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +31,7 @@ import { supabase } from '@/lib/supabase';
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { user } = useAuthStore();
   const { currentPool, pools, setPools, setCurrentPool } = usePoolStore();
   const [loading, setLoading] = useState(false);
@@ -184,6 +187,7 @@ export default function HomeScreen() {
       ? Math.max(0, totalMatches - (currentSub.validation_errors?.length ?? 0))
       : 0;
   const remainingPredictions = Math.max(0, totalMatches - filledCount);
+  const isCompactHero = width < 390;
 
   return (
     <ScrollView
@@ -197,40 +201,51 @@ export default function HomeScreen() {
           <View style={styles.heroBall2} />
           <View style={styles.heroBall3} />
         </View>
-        <View style={styles.heroTopRow}>
+        <View style={[styles.heroTopRow, isCompactHero && styles.heroTopRowCompact]}>
           {profile && (
-            <View style={styles.heroGreeting}>
-              <Text style={styles.heroGreetingHola}>Hola,</Text>
-              <Text style={styles.heroGreetingName} numberOfLines={1}>{profile.username}</Text>
+            <View style={[styles.heroGreeting, isCompactHero && styles.heroGreetingCompact]}>
+              <Text style={[styles.heroGreetingHola, isCompactHero && styles.heroGreetingHolaCompact]}>Hola,</Text>
+              <Text
+                style={[styles.heroGreetingName, isCompactHero && styles.heroGreetingNameCompact]}
+                numberOfLines={1}
+              >
+                {profile.username}
+              </Text>
             </View>
           )}
-          <View style={styles.heroActions}>
-            <TouchableOpacity style={styles.heroIconBtn}>
-              <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+          <View style={[styles.heroActions, isCompactHero && styles.heroActionsCompact]}>
+            <TouchableOpacity onPress={() => router.push('/(app)/rules')} style={[styles.heroIconBtn, isCompactHero && styles.heroIconBtnCompact]}>
+              <Ionicons name="help-circle-outline" size={isCompactHero ? 16 : 18} color={colors.accent} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={styles.heroAvatarBtn}>
-              <Text style={styles.heroAvatarText}>
-                {(profile?.username?.[0] ?? 'A').toUpperCase()}
-              </Text>
+            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={[styles.heroAvatarBtn, isCompactHero && styles.heroAvatarBtnCompact]}>
+              <UserAvatar
+                avatarUrl={profile?.avatar_url}
+                name={profile?.username}
+                size={isCompactHero ? 32 : 36}
+                backgroundColor={colors.accent}
+                textColor={colors.navy}
+              />
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.heroSelectorRow}>
+        <View style={[styles.heroSelectorRow, isCompactHero && styles.heroSelectorRowCompact]}>
           <TouchableOpacity
-            style={styles.heroPoolChip}
+            style={[styles.heroPoolChip, isCompactHero && styles.heroPoolChipCompact]}
             onPress={() => setShowPoolPicker(true)}
             activeOpacity={0.82}
           >
             <View style={styles.heroPoolDot} />
-            <Text style={styles.heroPoolText} numberOfLines={1}>
+            <Text style={[styles.heroPoolText, isCompactHero && styles.heroPoolTextCompact]} numberOfLines={1}>
               {currentPool?.name ?? 'Sin quiniela'}
             </Text>
             <Ionicons name="chevron-down" size={13} color="rgba(255,255,255,0.75)" />
           </TouchableOpacity>
-          <View style={styles.heroCountdownPill}>
+          <View style={[styles.heroCountdownPill, isCompactHero && styles.heroCountdownPillCompact]}>
             <View style={styles.heroPoolDot} />
-            <Text style={styles.heroCountdownText}>{daysLeft > 0 ? `${daysLeft} DÍAS` : 'EN JUEGO'}</Text>
+            <Text style={[styles.heroCountdownText, isCompactHero && styles.heroCountdownTextCompact]}>
+              {daysLeft > 0 ? `${daysLeft} DÍAS` : 'EN JUEGO'}
+            </Text>
           </View>
         </View>
       </View>
@@ -251,6 +266,27 @@ export default function HomeScreen() {
               <Text style={styles.ligaMembersText}>{Math.max(1, standings.length)}/{currentPool.max_members}</Text>
             </View>
           </View>
+          {standings.length > 0 && (
+            <View style={styles.ligaAvatarsRow}>
+              {standings.slice(0, 6).map((s, i) => (
+                <View key={s.user_id} style={[styles.ligaAvatarWrap, { zIndex: 10 - i, marginLeft: i === 0 ? 0 : -8 }]}>
+                  <UserAvatar
+                    avatarUrl={s.profile?.avatar_url}
+                    name={s.profile?.username}
+                    size={28}
+                    borderColor="#fff"
+                    borderWidth={2}
+                    backgroundColor="#D4E8DA"
+                  />
+                </View>
+              ))}
+              {standings.length > 6 && (
+                <View style={[styles.ligaAvatarWrap, styles.ligaAvatarExtra, { zIndex: 1, marginLeft: -8 }]}>
+                  <Text style={styles.ligaAvatarExtraText}>+{standings.length - 6}</Text>
+                </View>
+              )}
+            </View>
+          )}
           <View style={styles.ligaProgressHeader}>
             <Text style={styles.ligaProgressLabel}>Tus predicciones</Text>
             <Text style={styles.ligaCardFraction}>{filledCount}/{totalMatches}</Text>
@@ -269,10 +305,10 @@ export default function HomeScreen() {
             <Ionicons
               name={filledCount >= totalMatches ? 'checkmark-circle' : 'information-circle'}
               size={13}
-              color={colors.warning}
+              color={filledCount >= totalMatches ? colors.warning : colors.error}
             />
-            <Text style={styles.ligaWarningText}>
-              {filledCount >= totalMatches ? 'Quiniela completa' : 'Quiniela en progreso'}
+            <Text style={[styles.ligaWarningText, filledCount >= totalMatches ? {} : { color: colors.error }]}>\
+              {filledCount >= totalMatches ? 'Quiniela completa' : 'Quiniela sin completar'}
             </Text>
           </View>
         </View>
@@ -319,7 +355,7 @@ export default function HomeScreen() {
             );
           })()}
           <TouchableOpacity style={styles.positionCta} onPress={() => router.push('/(app)/standings')}>
-            <Text style={styles.positionCtaText}>Ver tabla completa</Text>
+            <Text style={styles.positionCtaText}>Ver tabla resultados</Text>
             <Ionicons name="chevron-forward" size={13} color={colors.navy} />
           </TouchableOpacity>
         </View>
@@ -486,25 +522,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.sm,
   },
+  heroTopRowCompact: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingRight: 0,
+  },
   heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heroActionsCompact: {
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 0,
+    marginLeft: spacing.sm,
+  },
   heroIconBtn: {
     width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+  },
+  heroIconBtnCompact: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
   },
   heroAvatarBtn: {
     width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.accent,
   },
+  heroAvatarBtnCompact: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
+  },
   heroAvatarText: { fontSize: 16, fontWeight: '900', color: colors.navy },
+  heroAvatarTextCompact: { fontSize: 14 },
   heroSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+  heroSelectorRowCompact: {
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   heroPoolChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     flexGrow: 0, flexShrink: 1, maxWidth: '72%',
     minHeight: 34, borderRadius: 14, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2,
     backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
   },
+  heroPoolChipCompact: {
+    maxWidth: '64%',
+    paddingHorizontal: spacing.sm,
+    minHeight: 32,
+  },
   heroPoolDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.accent },
   heroPoolText: { fontSize: 13, fontWeight: '800', color: '#fff', flexShrink: 1, fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.2 },
+  heroPoolTextCompact: { fontSize: 12 },
   heroCountdownPill: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs, alignSelf: 'flex-start',
     minHeight: 34, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2,
@@ -512,12 +583,27 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.10)',
   },
+  heroCountdownPillCompact: {
+    alignSelf: 'center',
+    paddingHorizontal: spacing.xs + 1,
+    minHeight: 32,
+    flexShrink: 0,
+  },
   heroCountdownText: { fontSize: 13, color: '#fff', fontWeight: '800', fontFamily: 'BarlowCondensed_700Bold', letterSpacing: 0.3 },
+  heroCountdownTextCompact: { fontSize: 12 },
   heroGreeting: {
     maxWidth: '72%',
   },
+  heroGreetingCompact: { maxWidth: '76%', marginTop: spacing.xs + 2 },
   heroGreetingHola: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.75)', fontFamily: 'BarlowCondensed_600SemiBold' },
+  heroGreetingHolaCompact: { fontSize: 12 },
   heroGreetingName: { fontSize: 32, fontWeight: '900', color: '#fff', lineHeight: 34, maxWidth: '100%', fontFamily: 'BarlowCondensed_900Black', letterSpacing: 0.2 },
+  heroGreetingNameCompact: {
+    fontSize: 21,
+    lineHeight: 23,
+    maxWidth: '100%',
+    marginTop: 6,
+  },
 
   // Liga card
   ligaCard: {
@@ -539,6 +625,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
   },
   ligaMembersText: { fontSize: 11, color: '#4F5C57', fontWeight: '800', fontFamily: 'BarlowCondensed_700Bold' },
+  ligaAvatarsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  ligaAvatarWrap: { borderRadius: 14 },
+  ligaAvatarExtra: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: '#C8DDD1',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff',
+  },
+  ligaAvatarExtraText: { fontSize: 10, fontWeight: '900', color: '#2D6B4A', fontFamily: 'BarlowCondensed_700Bold' },
   ligaProgressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
   ligaProgressLabel: { fontSize: 13, color: '#4F5C57', fontWeight: '700', fontFamily: 'BarlowCondensed_700Bold' },
   ligaCardFraction: { fontSize: 26, fontWeight: '900', color: '#0C5034', fontFamily: 'BarlowCondensed_900Black', lineHeight: 24 },

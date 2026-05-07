@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius } from './ui/theme';
 import type { Standing } from '@/types';
 import { RankChangeIndicator } from './RankChangeIndicator';
+import { UserAvatar } from './UserAvatar';
 
 interface StandingRowProps {
   standing: Standing;
@@ -34,7 +35,6 @@ export function StandingRow({
   const precision =
     standing.matches_played > 0 ? Math.round((standing.correct_results / standing.matches_played) * 100) : 0;
   const rankColor = rank <= 3 ? '#C59411' : '#556873';
-  const avatarGlyph = rank === 1 ? '👑' : rank === 2 ? '⚡' : rank === 3 ? '🌟' : '⚽';
 
   return (
     <TouchableOpacity
@@ -47,7 +47,12 @@ export function StandingRow({
       </View>
 
       <View style={styles.avatarWrap}>
-        <Text style={styles.avatarLetter}>{avatarGlyph}</Text>
+        <UserAvatar
+          avatarUrl={standing.profile?.avatar_url}
+          name={standing.profile?.username}
+          rank={rank <= 3 ? rank : undefined}
+          size={40}
+        />
       </View>
 
       <View style={styles.userInfo}>

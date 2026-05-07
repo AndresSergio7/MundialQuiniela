@@ -1,6 +1,16 @@
 import { supabase } from '@/lib/supabase';
 import { AppError } from '@/lib/errors';
 
+/** Returns true if the username is not yet taken. */
+export async function checkUsernameAvailable(username: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('username', username.trim())
+    .maybeSingle();
+  return data === null;
+}
+
 /** URL absoluta permitida en Supabase (Auth → URL configuration → Redirect URLs). */
 export async function requestPasswordReset(email: string, redirectTo: string) {
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
