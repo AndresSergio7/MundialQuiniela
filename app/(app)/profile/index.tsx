@@ -210,21 +210,6 @@ export default function ProfileScreen() {
               <View style={styles.menuItem}>
                 <View style={styles.menuItemLeft}>
                   <View style={[styles.menuIconWrap, { backgroundColor: '#EAF6EE' }]}>
-                    <Ionicons name="notifications-outline" size={18} color={colors.primary} />
-                  </View>
-                  <View>
-                    <Text style={styles.menuItemTitle}>Notificaciones</Text>
-                    <Text style={styles.menuItemSub}>Próximamente</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textLight} />
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.menuItem}>
-                <View style={styles.menuItemLeft}>
-                  <View style={[styles.menuIconWrap, { backgroundColor: '#EAF6EE' }]}>
                     <Ionicons name="mail-outline" size={18} color={colors.primary} />
                   </View>
                   <View>

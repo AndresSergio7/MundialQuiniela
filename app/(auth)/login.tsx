@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,21 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuthStore } from '@/store/auth';
 import { AppError } from '@/lib/errors';
 import { signIn } from '@/services/auth.service';
+import {
+  getBiometricStatus,
+  authenticateWithBiometrics,
+  saveBiometricCredentials,
+  getBiometricCredentials,
+  hasBiometricCredentials,
+  type BiometricType,
+} from '@/lib/biometrics';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
@@ -23,6 +33,54 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  const [biometricType, setBiometricType] = useState<BiometricType>('none');
+  const [biometricReady, setBiometricReady] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initBiometrics() {
+      // Si ya hay sesión activa el route guard navegará a (app);
+      // no tiene sentido pedir biometría.
+      if (useAuthStore.getState().session) return;
+
+      const { available, type } = await getBiometricStatus();
+      if (cancelled || !available) return;
+
+      const hasCreds = await hasBiometricCredentials();
+      if (cancelled) return;
+
+      setBiometricType(type);
+      setBiometricReady(hasCreds);
+      if (hasCreds) triggerBiometricLogin(type);
+    }
+
+    initBiometrics();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function triggerBiometricLogin(type: BiometricType) {
+    // Double-check: si hay sesión activa no hacer nada
+    if (useAuthStore.getState().session) return;
+
+    setBiometricLoading(true);
+    setErrorMsg('');
+    try {
+      const authenticated = await authenticateWithBiometrics(type);
+      if (!authenticated) { setBiometricLoading(false); return; }
+
+      const creds = await getBiometricCredentials();
+      if (!creds) { setBiometricLoading(false); return; }
+
+      await signIn(creds.email, creds.password);
+    } catch (error) {
+      setErrorMsg(error instanceof AppError ? error.message : 'Error al iniciar sesión.');
+    } finally {
+      setBiometricLoading(false);
+    }
+  }
 
   function validate(): boolean {
     const e: typeof fieldErrors = {};
@@ -39,12 +97,39 @@ export default function LoginScreen() {
 
     try {
       await signIn(email.trim(), password);
+      await offerBiometricSetup(email.trim(), password);
     } catch (error) {
       setErrorMsg(error instanceof AppError ? error.message : 'Error al iniciar sesión. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
   }
+
+  async function offerBiometricSetup(emailVal: string, passwordVal: string) {
+    if (biometricReady) return;
+    const { available, type } = await getBiometricStatus();
+    if (!available) return;
+
+    const label = type === 'facial' ? 'Face ID' : 'Huella dactilar';
+    Alert.alert(
+      `Activar ${label}`,
+      `¿Quieres usar ${label} para entrar más rápido la próxima vez?`,
+      [
+        { text: 'Ahora no', style: 'cancel' },
+        {
+          text: 'Activar',
+          onPress: async () => {
+            await saveBiometricCredentials(emailVal, passwordVal);
+            setBiometricType(type);
+            setBiometricReady(true);
+          },
+        },
+      ],
+    );
+  }
+
+  const biometricIcon = biometricType === 'facial' ? 'scan-outline' : 'finger-print';
+  const biometricLabel = biometricType === 'facial' ? 'Face ID' : 'Huella dactilar';
 
   return (
     <KeyboardAvoidingView
@@ -125,6 +210,26 @@ export default function LoginScreen() {
             style={styles.loginBtn}
           />
 
+          {biometricReady && biometricType !== 'none' && (
+            <TouchableOpacity
+              style={styles.biometricBtn}
+              onPress={() => triggerBiometricLogin(biometricType)}
+              disabled={biometricLoading}
+              activeOpacity={0.8}
+            >
+              <View style={styles.biometricIconWrap}>
+                <Ionicons
+                  name={biometricIcon}
+                  size={28}
+                  color={biometricLoading ? colors.textLight : colors.primary}
+                />
+              </View>
+              <Text style={styles.biometricLabel}>
+                {biometricLoading ? 'Verificando…' : `Entrar con ${biometricLabel}`}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.footer}>
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -200,6 +305,34 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.error + '40', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg,
   },
   errorBannerText: { fontSize: 13, color: colors.error, fontWeight: '600', flex: 1 },
+
+  biometricBtn: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '40',
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    ...shadows.sm,
+  },
+  biometricIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometricLabel: {
+    fontSize: 15,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+
   footer: { marginTop: spacing.xxl },
   divider: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xl },
   dividerLine: { flex: 1, height: 1.5, backgroundColor: '#E2E8F0' },

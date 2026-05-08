@@ -31,6 +31,19 @@ import { exportPredictionsPdf } from '@/lib/predictionsPdf';
 import { getCountryFlagFallback, getCountryFlagSvgUrl, getCountryFlagPngUrl } from '@/lib/flags';
 import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
+// ── Secciones ordenadas ──────────────────────────────────────────────────────
+const SECTION_ORDER = ['A','B','C','D','E','F','G','H','I','J','K','L','R32','R16','QF','SF','3P','F'] as const;
+const KNOCKOUT_GROUPS = new Set(['R32','R16','QF','SF','3P','F']);
+const KNOCKOUT_META: Record<string, { label: string; title: string; subtitle: string }> = {
+  R32: { label: '16avos',   title: 'Ronda de 32',       subtitle: 'Las llaves se definen al terminar la fase de grupos.' },
+  R16: { label: 'Octavos',  title: 'Octavos de Final',  subtitle: 'Las llaves se definen al terminar la Ronda de 32.' },
+  QF:  { label: 'Cuartos',  title: 'Cuartos de Final',  subtitle: 'Las llaves se definen al terminar los Octavos.' },
+  SF:  { label: 'Semis',    title: 'Semifinales',        subtitle: 'Las llaves se definen al terminar los Cuartos.' },
+  '3P':{ label: '3° Lugar', title: 'Tercer Lugar',       subtitle: 'Los equipos se definen en las Semifinales.' },
+  F:   { label: 'Final',    title: 'Gran Final',          subtitle: 'Los equipos se definen en las Semifinales.' },
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 type LocalScores = Record<string, { home: string; away: string }>;
 
 type GroupStandingRow = {
@@ -192,21 +205,30 @@ export default function PredictionsScreen() {
     setError(null); setValidationErrors([]); setAutosaveStatus('idle');
   }
 
-  const filledCount = useMemo(
-    () => Object.values(localScores).filter(s => s.home !== '' && s.away !== '').length,
-    [localScores],
+  // Debe declararse ANTES de filledCount/allFilled que lo consumen
+  const groupMatchesEarly = useMemo(
+    () => matches.filter(m => !KNOCKOUT_GROUPS.has(m.group_name)),
+    [matches],
   );
-  const allFilled = matches.length > 0 && filledCount === matches.length;
+
+  const filledCount = useMemo(
+    () => groupMatchesEarly.filter(m => {
+      const s = localScores[m.id];
+      return s?.home !== '' && s?.away !== '';
+    }).length,
+    [groupMatchesEarly, localScores],
+  );
+  const allFilled = groupMatchesEarly.length > 0 && filledCount === groupMatchesEarly.length;
 
   const printableRows = useMemo(
-    () => matches
+    () => groupMatchesEarly
       .filter(m => localScores[m.id]?.home !== '' && localScores[m.id]?.away !== '')
       .map(m => ({
         match: m,
         homeScore: parseInt(localScores[m.id].home, 10),
         awayScore: parseInt(localScores[m.id].away, 10),
       })),
-    [matches, localScores],
+    [groupMatchesEarly, localScores],
   );
 
   function buildPredictionMap(): PredictionMap {
@@ -325,8 +347,12 @@ export default function PredictionsScreen() {
   }
 
   const groupNames = useMemo(() => {
-    const names = Array.from(new Set(matches.map(m => m.group_name))).sort();
-    return names;
+    const names = Array.from(new Set(matches.map(m => m.group_name)));
+    return names.sort((a, b) => {
+      const ia = SECTION_ORDER.indexOf(a as typeof SECTION_ORDER[number]);
+      const ib = SECTION_ORDER.indexOf(b as typeof SECTION_ORDER[number]);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    });
   }, [matches]);
 
   const groupedMatchMap = useMemo(() => {
@@ -350,8 +376,10 @@ export default function PredictionsScreen() {
   );
 
   const projectedGroupTable = useMemo(
-    () => buildProjectedGroupTable(activeGroupMatches, localScores),
-    [activeGroupMatches, localScores],
+    () => activeGroup && !KNOCKOUT_GROUPS.has(activeGroup)
+      ? buildProjectedGroupTable(activeGroupMatches, localScores)
+      : [],
+    [activeGroup, activeGroupMatches, localScores],
   );
 
   const groupStats = useMemo(
@@ -367,7 +395,9 @@ export default function PredictionsScreen() {
   );
 
   const visibleMatches = useMemo(() => {
-    let result = activeGroup ? (groupedMatchMap[activeGroup] ?? []) : matches;
+    // Playoff sin equipos definidos → lista vacía (se muestra estado bloqueado)
+    if (activeGroup && KNOCKOUT_GROUPS.has(activeGroup)) return [];
+    let result = activeGroup ? (groupedMatchMap[activeGroup] ?? []) : groupMatchesEarly;
     if (activeFilter === 'pending') {
       result = result.filter(m => {
         const s = localScores[m.id];
@@ -375,7 +405,7 @@ export default function PredictionsScreen() {
       });
     }
     return result;
-  }, [activeGroup, groupedMatchMap, matches, activeFilter, localScores]);
+  }, [activeGroup, groupedMatchMap, groupMatchesEarly, activeFilter, localScores]);
 
   const activeGroupComplete = useMemo(() => {
     if (!activeGroup) return false;
@@ -402,7 +432,7 @@ export default function PredictionsScreen() {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
   }, []);
 
-  const pct = matches.length > 0 ? Math.round((filledCount / matches.length) * 100) : 0;
+  const pct = groupMatchesEarly.length > 0 ? Math.round((filledCount / groupMatchesEarly.length) * 100) : 0;
   const showEditActions = !tournamentLocked;
 
   if (!currentPool) {
@@ -419,7 +449,7 @@ export default function PredictionsScreen() {
       {/* Progress bar */}
       <View style={styles.progressCard}>
         <View style={styles.progressRow}>
-          <Text style={styles.progressLabel}>{filledCount} / {matches.length} partidos</Text>
+          <Text style={styles.progressLabel}>{filledCount} / {groupMatchesEarly.length} partidos (fase grupos)</Text>
           <Text style={styles.progressPct}>{pct}%</Text>
         </View>
         <View style={styles.progressTrack}>
@@ -458,19 +488,50 @@ export default function PredictionsScreen() {
 
       {/* Group chips — single select */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupChipsScroll}>
-        {groupStats.map(g => {
-          const complete = g.filled === g.total;
+        {groupStats.map((g, idx) => {
+          const isKnockout = KNOCKOUT_GROUPS.has(g.title);
+          const prevIsGroup = idx > 0 && !KNOCKOUT_GROUPS.has(groupStats[idx - 1].title);
+          const complete = !isKnockout && g.filled === g.total;
           const active = activeGroup === g.title;
+          const chipLabel = isKnockout ? (KNOCKOUT_META[g.title]?.label ?? g.title) : g.title;
           return (
-            <TouchableOpacity
-              key={g.title}
-              style={[styles.groupChip, active && styles.groupChipActive]}
-              onPress={() => setActiveGroup(g.title)}
-            >
-              {complete && <View style={styles.groupCompleteDot} />}
-              <Text style={[styles.groupChipText, active && styles.groupChipTextActive]}>{g.title}</Text>
-              <Text style={[styles.groupChipSub, active && styles.groupChipSubActive]}>{g.filled}/{g.total}</Text>
-            </TouchableOpacity>
+            <React.Fragment key={g.title}>
+              {/* Separador visual entre grupos y playoffs */}
+              {isKnockout && prevIsGroup && (
+                <View style={styles.chipsPlayoffSep}>
+                  <View style={styles.chipsPlayoffSepLine} />
+                </View>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.groupChip,
+                  active && styles.groupChipActive,
+                  isKnockout && styles.groupChipKnockout,
+                  isKnockout && active && styles.groupChipKnockoutActive,
+                ]}
+                onPress={() => setActiveGroup(g.title)}
+              >
+                {complete && <View style={styles.groupCompleteDot} />}
+                {isKnockout && (
+                  <Ionicons
+                    name="lock-closed"
+                    size={9}
+                    color={active ? 'rgba(255,255,255,0.65)' : colors.textLight}
+                    style={{ marginBottom: 1 }}
+                  />
+                )}
+                <Text style={[
+                  styles.groupChipText,
+                  active && styles.groupChipTextActive,
+                  isKnockout && !active && styles.groupChipTextKnockout,
+                ]}>
+                  {chipLabel}
+                </Text>
+                {!isKnockout && (
+                  <Text style={[styles.groupChipSub, active && styles.groupChipSubActive]}>{g.filled}/{g.total}</Text>
+                )}
+              </TouchableOpacity>
+            </React.Fragment>
           );
         })}
       </ScrollView>
@@ -526,18 +587,6 @@ export default function PredictionsScreen() {
           ))}
         </View>
       )}
-      {autosaveStatus === 'saving' && (
-        <View style={styles.autosaveBanner}>
-          <ActivityIndicator size="small" color={colors.primary} />
-          <Text style={styles.autosaveText}>Guardando automáticamente…</Text>
-        </View>
-      )}
-      {autosaveStatus === 'saved' && !tournamentLocked && (
-        <View style={styles.successBanner}>
-          <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          <Text style={styles.successText}>Guardado automáticamente</Text>
-        </View>
-      )}
       {autosaveStatus === 'error' && (
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle" size={14} color={colors.error} />
@@ -551,7 +600,7 @@ export default function PredictionsScreen() {
     <View style={styles.screen}>
       <PoolSelectorBar
         contextLabel="MI QUINIELA"
-        rightBadgeText={`${filledCount}/${matches.length}`}
+        rightBadgeText={`${filledCount}/${groupMatchesEarly.length}`}
         onPoolChange={pool => loadAll(pool)}
       />
 
@@ -579,11 +628,28 @@ export default function PredictionsScreen() {
             />
           )}
           ListEmptyComponent={
-            activeFilter === 'pending' && activeGroupComplete ? (
+            activeGroup && KNOCKOUT_GROUPS.has(activeGroup) ? (
+              <View style={styles.knockoutLocked}>
+                <View style={styles.knockoutLockedIcon}>
+                  <Ionicons name="lock-closed" size={30} color={colors.textLight} />
+                </View>
+                <Text style={styles.knockoutLockedTitle}>
+                  {KNOCKOUT_META[activeGroup]?.title ?? activeGroup}
+                </Text>
+                <Text style={styles.knockoutLockedSub}>
+                  {KNOCKOUT_META[activeGroup]?.subtitle}
+                  {'\n'}Podrás capturar tus predicciones cuando se definan los equipos.
+                </Text>
+                <View style={styles.knockoutLockedBadge}>
+                  <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                  <Text style={styles.knockoutLockedBadgeText}>Próximamente</Text>
+                </View>
+              </View>
+            ) : activeFilter === 'pending' && activeGroupComplete ? (
               <View style={styles.completeState}>
                 <Text style={styles.completeIcon}>✅</Text>
                 <Text style={styles.completeTitle}>¡Grupo {activeGroup} completo!</Text>
-                <Text style={styles.completeSub}>Cámbiate a “Todos” para revisar o editar tus marcadores</Text>
+                <Text style={styles.completeSub}>Cámbiate a "Todos" para revisar o editar tus marcadores</Text>
               </View>
             ) : null
           }
@@ -591,7 +657,7 @@ export default function PredictionsScreen() {
             <View style={styles.footer}>
               {!allFilled && !tournamentLocked && (
                 <Text style={styles.hint}>
-                  Faltan {matches.length - filledCount} partido{matches.length - filledCount !== 1 ? 's' : ''} para poder enviar
+                  Faltan {groupMatchesEarly.length - filledCount} partido{groupMatchesEarly.length - filledCount !== 1 ? 's' : ''} para poder enviar
                 </Text>
               )}
             </View>
@@ -878,6 +944,83 @@ const styles = StyleSheet.create({
   completeIcon: { fontSize: 48, marginBottom: spacing.md },
   completeTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
   completeSub: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
+
+  // Playoff chips
+  groupChipKnockout: {
+    borderColor: '#CBD5D1',
+    backgroundColor: '#F4F7F5',
+    borderStyle: 'dashed',
+  },
+  groupChipKnockoutActive: {
+    backgroundColor: '#475569',
+    borderColor: '#475569',
+    borderStyle: 'solid',
+  },
+  groupChipTextKnockout: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  chipsPlayoffSep: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  chipsPlayoffSepLine: {
+    width: 1.5,
+    height: 28,
+    backgroundColor: '#D1DAD5',
+    borderRadius: 1,
+  },
+
+  // Playoff estado bloqueado
+  knockoutLocked: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl * 2,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  knockoutLockedIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#F1F5F2',
+    borderWidth: 1.5,
+    borderColor: '#D1DAD5',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  knockoutLockedTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  knockoutLockedSub: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: 280,
+  },
+  knockoutLockedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 1,
+    marginTop: spacing.xs,
+  },
+  knockoutLockedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
 
   progressCard: {
     backgroundColor: colors.surface,

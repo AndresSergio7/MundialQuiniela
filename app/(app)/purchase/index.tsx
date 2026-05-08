@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { supabase } from '@/lib/supabase';
-import { purchasePoolPlan, restorePurchases } from '@/lib/payments';
+import { purchasePoolPlan } from '@/lib/payments';
 import { createPoolLegacy as createPool, listMyPools } from '@/services/pools.service';
 import { applyUnusedEntitlementToPool, getSingleSoloAdminPoolId } from '@/services/invites.service';
 import { usePoolStore } from '@/store/pool';
@@ -29,20 +29,12 @@ const POPULAR_PLAN_IDX = 1;
 
 export default function PurchaseScreen() {
   const router = useRouter();
-  const { upgradePoolId: upgradePoolIdParam } = useLocalSearchParams<{
-    upgradePoolId?: string | string[];
-  }>();
-  const upgradePoolId = Array.isArray(upgradePoolIdParam)
-    ? upgradePoolIdParam[0]
-    : upgradePoolIdParam;
-
   const { user } = useAuthStore();
   const setPools = usePoolStore((s) => s.setPools);
   const setCurrentPool = usePoolStore((s) => s.setCurrentPool);
   const currentPool = usePoolStore((s) => s.currentPool);
 
   const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
-  const [restoring, setRestoring] = useState(false);
   const [unusedEntitlements, setUnusedEntitlements] = useState<Entitlement[]>([]);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
@@ -79,19 +71,16 @@ export default function PurchaseScreen() {
     setPurchasing(null);
 
     if (success) {
-      const upgradeTarget =
-        upgradePoolId ?? (await getSingleSoloAdminPoolId(user.id));
+      const soloTarget = await getSingleSoloAdminPoolId(user.id);
 
-      if (upgradeTarget) {
-        const { error: attachError } = await applyUnusedEntitlementToPool(user.id, upgradeTarget);
+      if (soloTarget) {
+        const { error: attachError } = await applyUnusedEntitlementToPool(user.id, soloTarget);
         if (!attachError) {
           await refreshUnused();
           const nextPools = await listMyPools(user.id);
           setPools(nextPools);
-          const updated = nextPools.find((p) => p.id === upgradeTarget);
-          if (updated && currentPool?.id === upgradeTarget) {
-            setCurrentPool(updated);
-          }
+          const updated = nextPools.find((p) => p.id === soloTarget);
+          if (updated && currentPool?.id === soloTarget) setCurrentPool(updated);
           router.replace('/(app)/invites');
           return;
         }
@@ -100,7 +89,6 @@ export default function PurchaseScreen() {
             ? 'No se pudo aplicar la compra a la quiniela. Usa "Crear" abajo o vuelve a intentar.'
             : attachError,
         );
-        if (upgradePoolId) return;
       }
 
       const list = await refreshUnused();
@@ -153,15 +141,6 @@ export default function PurchaseScreen() {
     setShowNameModal(true);
   }
 
-  async function handleRestore() {
-    if (!user) return;
-    setRestoring(true);
-    const success = await restorePurchases(user.id);
-    await refreshUnused();
-    if (!success) setPurchaseError('No se encontraron compras anteriores.');
-    setRestoring(false);
-  }
-
   return (
     <>
       <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
@@ -174,13 +153,9 @@ export default function PurchaseScreen() {
           <View style={styles.heroIconWrap}>
             <Ionicons name="card" size={34} color={colors.accent} />
           </View>
-          <Text style={styles.heroTitle}>
-            {upgradePoolId ? 'Amplía tu quiniela' : 'Planes de quiniela'}
-          </Text>
+          <Text style={styles.heroTitle}>Planes de quiniela</Text>
           <Text style={styles.heroSubtitle}>
-            {upgradePoolId
-              ? 'Tu compra ampliará el cupo de tu quiniela para que puedas invitar más personas.'
-              : 'Compra, crea tu quiniela y participa al instante. Diseño simple y escalable para crecer por ligas.'}
+            Compra, crea tu quiniela y participa al instante. Diseño simple y escalable para crecer por ligas.
           </Text>
           <View style={styles.heroMetaRow}>
             <View style={styles.heroMetaChip}>
@@ -328,20 +303,10 @@ export default function PurchaseScreen() {
             </View>
             <View style={styles.contactInfo}>
               <Text style={styles.contactTitle}>Tu compra queda ligada a tu cuenta</Text>
-              <Text style={styles.contactSub}>Si cambias de dispositivo puedes restaurar desde esta misma pantalla.</Text>
+              <Text style={styles.contactSub}>Puedes comprar tantas quinielas como quieras, cada una con su propio grupo.</Text>
             </View>
           </View>
         </View>
-
-        {!isWeb && (
-          <Button
-            title={restoring ? 'Restaurando…' : 'Restaurar Compras'}
-            variant="ghost"
-            onPress={handleRestore}
-            loading={restoring}
-            style={{ marginTop: spacing.sm }}
-          />
-        )}
 
         <Text style={styles.legal}>
           {isWeb

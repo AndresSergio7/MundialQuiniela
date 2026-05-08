@@ -278,7 +278,7 @@ export default function HomeScreen() {
               <Ionicons name="football-outline" size={18} color={colors.primary} />
             </View>
             <View style={styles.ligaCardInfo}>
-              <Text style={styles.ligaCardLabel}>MIS LIGAS</Text>
+              <Text style={styles.ligaCardLabel}>MI LIGA</Text>
               <Text style={styles.ligaCardName}>{currentPool.name}</Text>
             </View>
             <View style={styles.ligaMembersBadge}>
@@ -327,7 +327,7 @@ export default function HomeScreen() {
               size={13}
               color={filledCount >= totalMatches ? colors.warning : colors.error}
             />
-            <Text style={[styles.ligaWarningText, filledCount >= totalMatches ? {} : { color: colors.error }]}>\
+            <Text style={[styles.ligaWarningText, filledCount >= totalMatches ? {} : { color: colors.error }]}>
               {filledCount >= totalMatches ? 'Quiniela completa' : 'Quiniela sin completar'}
             </Text>
           </View>

@@ -36,12 +36,10 @@ function FlagIcon({ code, rightAligned = false }: { code: string; rightAligned?:
 
 function formatMatchDate(dateString: string) {
   const date = new Date(dateString);
-  return date.toLocaleString('es-MX', {
+  return date.toLocaleDateString('es-MX', {
     weekday: 'short',
-    month: 'short',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+    month: 'short',
   });
 }
 

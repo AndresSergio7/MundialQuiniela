@@ -10,6 +10,8 @@ import {
   RefreshControl,
   Platform,
   Linking,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -17,11 +19,22 @@ import { useAuthStore } from '@/store/auth';
 import { usePoolStore } from '@/store/pool';
 import { generateInviteLink } from '@/services/invites.service';
 import { fetchPoolById, getPoolMembers, listMyPools, removeMember } from '@/services/pools.service';
+import { purchasePoolPlan } from '@/lib/payments';
+import { applyUnusedEntitlementToPool } from '@/services/invites.service';
 import { PoolSelectorBar } from '@/components/PoolSelectorBar';
 import { UserAvatar } from '@/components/UserAvatar';
+import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, radius, shadows } from '@/components/ui/theme';
 import { POOL_PLANS } from '@/types';
-import type { PoolMember, Pool } from '@/types';
+import type { PoolMember, Pool, PoolPlanId } from '@/types';
+
+const isWeb = Platform.OS === 'web';
+
+const PLAN_ICONS = ['people-outline', 'people-outline', 'people-outline', 'globe-outline'] as const;
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
 
 const AVATAR_COLORS = ['#E91E63','#9C27B0','#3F51B5','#2196F3','#00897B','#FF7043','#5D4037','#546E7A'];
 function avatarColor(seed: string) {
@@ -46,7 +59,23 @@ export default function InvitesScreen() {
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState('');
 
+  // Upgrade modal state
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+
   const isAdmin = currentPool?.admin_id === user?.id;
+
+  const currentPlanIdx = currentPool
+    ? POOL_PLANS.findIndex(p => p.slots === currentPool.max_members)
+    : -1;
+  const currentPlan = currentPlanIdx >= 0 ? POOL_PLANS[currentPlanIdx] : null;
+  const nextPlan = currentPlanIdx >= 0 && currentPlanIdx < POOL_PLANS.length - 1
+    ? POOL_PLANS[currentPlanIdx + 1]
+    : null;
+  const eligiblePlans = currentPlan
+    ? POOL_PLANS.filter(p => p.slots > currentPlan.slots)
+    : [];
 
   async function loadData(pool?: Pool, silent?: boolean) {
     const activePool = pool ?? currentPool;
@@ -87,7 +116,6 @@ export default function InvitesScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPool?.id]);
 
-  // Al volver desde Comprar / Inicio el store puede tener max_members viejo; mismo id no dispara el effect de arriba.
   useFocusEffect(
     useCallback(() => {
       const uid = user?.id;
@@ -97,10 +125,7 @@ export default function InvitesScreen() {
 
       async function syncPoolFromServer() {
         const pool = usePoolStore.getState().currentPool;
-        if (!pool) {
-          setError(null);
-          return;
-        }
+        if (!pool) { setError(null); return; }
         setError(null);
         setShareSuccess(false);
         try {
@@ -119,9 +144,7 @@ export default function InvitesScreen() {
       }
 
       void syncPoolFromServer();
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }, [user?.id, setCurrentPool, setPools]),
   );
 
@@ -137,7 +160,7 @@ export default function InvitesScreen() {
     if (linkError || !link) {
       if (linkError === 'PURCHASE_REQUIRED') {
         setError('Para invitar participantes primero necesitas comprar un plan.');
-        router.push(`/(app)/purchase?upgradePoolId=${encodeURIComponent(currentPool.id)}`);
+        router.push('/(app)/purchase');
         return;
       }
       setError(linkError ?? 'No se pudo generar el link de invitación.');
@@ -221,11 +244,40 @@ export default function InvitesScreen() {
     const { error: removeErr } = await removeMember(user.id, currentPool.id, memberId);
     setRemoving(null);
     setConfirmRemoveId(null);
-    if (removeErr) {
-      setRemoveError(removeErr);
-    } else {
-      await loadData();
+    if (removeErr) setRemoveError(removeErr);
+    else await loadData();
+  }
+
+  async function handleUpgradePurchase(planId: PoolPlanId) {
+    if (!user || !currentPool) return;
+    setPurchasing(planId);
+    setUpgradeError(null);
+
+    const success = await purchasePoolPlan(user.id, planId);
+    if (!success) {
+      setPurchasing(null);
+      setUpgradeError('La compra falló. Por favor intenta de nuevo.');
+      return;
     }
+
+    const { error: attachError } = await applyUnusedEntitlementToPool(user.id, currentPool.id);
+    setPurchasing(null);
+
+    if (attachError) {
+      setUpgradeError(
+        attachError === 'PURCHASE_REQUIRED'
+          ? 'No se pudo aplicar la compra. Vuelve a intentar.'
+          : attachError,
+      );
+      return;
+    }
+
+    const nextPools = await listMyPools(user.id);
+    setPools(nextPools);
+    const updated = nextPools.find(p => p.id === currentPool.id);
+    if (updated) setCurrentPool(updated);
+    setShowUpgradeModal(false);
+    await loadData();
   }
 
   if (!currentPool) {
@@ -241,10 +293,6 @@ export default function InvitesScreen() {
   }
 
   const spotsLeft = currentPool.max_members - members.length;
-  const currentPlanIdx = POOL_PLANS.findIndex(p => p.slots === currentPool.max_members);
-  const nextPlan = currentPlanIdx >= 0 && currentPlanIdx < POOL_PLANS.length - 1
-    ? POOL_PLANS[currentPlanIdx + 1]
-    : null;
   const memberPreview = members.slice(0, 5);
   const extraMembers = Math.max(0, members.length - memberPreview.length);
   const displayInviteLink =
@@ -258,7 +306,6 @@ export default function InvitesScreen() {
         onPoolChange={(pool) => handlePoolSelect(pool)}
       />
 
-      {/* Members list */}
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
       ) : (
@@ -367,24 +414,20 @@ export default function InvitesScreen() {
                 </View>
               )}
 
-              {isAdmin && (
-                <>
-                  {nextPlan && (
-                    <TouchableOpacity
-                      style={styles.upgradeBanner}
-                      onPress={() => router.push(`/(app)/purchase?upgradePoolId=${encodeURIComponent(currentPool.id)}`)}
-                    >
-                      <View style={styles.upgradeBadge}>
-                        <Ionicons name="sparkles-outline" size={16} color="#fff" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.upgradeTitle}>¿Necesitas más cupos?</Text>
-                        <Text style={styles.upgradeSub}>Sube a {nextPlan.slots} jugadores · {nextPlan.priceLabel}</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={20} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                </>
+              {isAdmin && nextPlan && (
+                <TouchableOpacity
+                  style={styles.upgradeBanner}
+                  onPress={() => { setUpgradeError(null); setShowUpgradeModal(true); }}
+                >
+                  <View style={styles.upgradeBadge}>
+                    <Ionicons name="sparkles-outline" size={16} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.upgradeTitle}>¿Necesitas más cupos?</Text>
+                    <Text style={styles.upgradeSub}>Sube a {nextPlan.slots} jugadores · {nextPlan.priceLabel}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#fff" />
+                </TouchableOpacity>
               )}
 
               <View style={styles.listHeader}>
@@ -396,35 +439,32 @@ export default function InvitesScreen() {
             const isPendingRemove = confirmRemoveId === member.user_id;
             const isRemoving = removing === member.user_id;
             const isMe = member.user_id === user?.id;
-            const initial = (member.profile?.username?.[0] ?? '?').toUpperCase();
             const isOwner = member.role === 'admin';
 
             return (
-               <View style={styles.memberCard}>
-                 <View style={styles.memberRow}>
-                   <UserAvatar
-                     avatarUrl={member.profile?.avatar_url}
-                     name={member.profile?.username}
-                     size={48}
-                     backgroundColor={isMe ? '#ECEFF1' : avatarColor(member.profile?.username ?? member.id)}
-                   />
-                   <View style={styles.memberInfo}>
-                     <View style={styles.memberNameRow}>
-                       <Text style={styles.memberName}>
-                         {member.profile?.username ?? 'Desconocido'}
-                       </Text>
-                       {isMe && <Text style={styles.meTag}> TÚ</Text>}
-                     </View>
-                     <Text style={styles.memberStatus}>{isOwner ? 'Admin · Activo' : 'Activo'}</Text>
-                   </View>
-                   {isOwner ? (
-                     <View style={styles.adminBadge}><Text style={styles.adminBadgeText}>ADMIN</Text></View>
-                   ) : isAdmin && !isMe ? (
-                     <TouchableOpacity
-                       style={styles.memberActionBtn}
-                       onPress={() =>
-                        setConfirmRemoveId(isPendingRemove ? null : member.user_id)
-                      }
+              <View style={styles.memberCard}>
+                <View style={styles.memberRow}>
+                  <UserAvatar
+                    avatarUrl={member.profile?.avatar_url}
+                    name={member.profile?.username}
+                    size={48}
+                    backgroundColor={isMe ? '#ECEFF1' : avatarColor(member.profile?.username ?? member.id)}
+                  />
+                  <View style={styles.memberInfo}>
+                    <View style={styles.memberNameRow}>
+                      <Text style={styles.memberName}>
+                        {member.profile?.username ?? 'Desconocido'}
+                      </Text>
+                      {isMe && <Text style={styles.meTag}> TÚ</Text>}
+                    </View>
+                    <Text style={styles.memberStatus}>{isOwner ? 'Admin · Activo' : 'Activo'}</Text>
+                  </View>
+                  {isOwner ? (
+                    <View style={styles.adminBadge}><Text style={styles.adminBadgeText}>ADMIN</Text></View>
+                  ) : isAdmin && !isMe ? (
+                    <TouchableOpacity
+                      style={styles.memberActionBtn}
+                      onPress={() => setConfirmRemoveId(isPendingRemove ? null : member.user_id)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <Ionicons
@@ -472,6 +512,92 @@ export default function InvitesScreen() {
           }
         />
       )}
+
+      {/* ── Upgrade Modal ── */}
+      <Modal visible={showUpgradeModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            {/* Handle */}
+            <View style={styles.modalHandle} />
+
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Amplía tu quiniela</Text>
+                <Text style={styles.modalSubtitle}>Solo pagas la diferencia con tu plan actual</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowUpgradeModal(false)}
+              >
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {currentPlan && (
+              <View style={styles.currentPlanChip}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={styles.currentPlanChipText}>
+                  Plan actual: {currentPlan.slots} cupos · {currentPlan.priceLabel}
+                </Text>
+              </View>
+            )}
+
+            {upgradeError && (
+              <View style={styles.upgradeErrorBanner}>
+                <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+                <Text style={styles.upgradeErrorText}> {upgradeError}</Text>
+              </View>
+            )}
+
+            <ScrollView
+              style={styles.modalScroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: spacing.xl }}
+            >
+              {eligiblePlans.map((plan) => {
+                const globalIdx = POOL_PLANS.findIndex(p => p.id === plan.id);
+                const isBuying = purchasing === plan.id;
+                const diffCents = currentPlan ? plan.priceCents - currentPlan.priceCents : plan.priceCents;
+                const diffLabel = formatCents(diffCents);
+
+                return (
+                  <View key={plan.id} style={styles.upgradePlanCard}>
+                    <View style={styles.upgradePlanTop}>
+                      <View style={styles.upgradePlanIconWrap}>
+                        <Ionicons name={PLAN_ICONS[globalIdx] ?? 'people-outline'} size={20} color={colors.primary} />
+                      </View>
+                      <View style={styles.upgradePlanInfo}>
+                        <Text style={styles.upgradePlanSlots}>{plan.slots} participantes</Text>
+                        <Text style={styles.upgradePlanDesc}>Amplía tu quiniela a {plan.slots} personas</Text>
+                      </View>
+                      <View style={styles.upgradePlanPriceWrap}>
+                        <Text style={styles.upgradePlanDiff}>+{diffLabel}</Text>
+                        <Text style={styles.upgradePlanFull}>{plan.priceLabel} total</Text>
+                      </View>
+                    </View>
+
+                    <Button
+                      title={
+                        isBuying
+                          ? 'Procesando…'
+                          : isWeb
+                          ? `Actualizar — +${diffLabel} (Demo)`
+                          : `Actualizar — +${diffLabel}`
+                      }
+                      variant="primary"
+                      onPress={() => handleUpgradePurchase(plan.id as PoolPlanId)}
+                      loading={isBuying}
+                      disabled={purchasing !== null && !isBuying}
+                      style={{ marginTop: spacing.md }}
+                    />
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -527,22 +653,6 @@ const styles = StyleSheet.create({
     bottom: -55,
     left: -20,
   },
-  inviteHeroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  inviteHeroLeft: { flex: 1 },
-  inviteHeroRight: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(201,168,76,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.35)',
-  },
   inviteHeroEyebrow: {
     fontSize: 13,
     color: colors.accentBright,
@@ -574,10 +684,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  avatarStackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  avatarStackRow: { flexDirection: 'row', alignItems: 'center' },
   stackAvatar: {
     width: 36,
     height: 36,
@@ -587,12 +694,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8ECEE',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  stackAvatarText: {
-    fontSize: 13,
-    color: '#fff',
-    fontWeight: '900',
-    fontFamily: 'BarlowCondensed_800ExtraBold',
   },
   stackAvatarExtra: { backgroundColor: '#fff' },
   stackAvatarExtraText: {
@@ -668,29 +769,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'BarlowCondensed_800ExtraBold',
   },
-  heroStatsRow: {
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  heroStatChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.38)',
-    backgroundColor: 'rgba(13,27,42,0.22)',
-  },
-  heroStatText: {
-    ...typography.tiny,
-    color: '#FDF6DC',
-    fontWeight: '700',
-  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -709,6 +787,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   successText: { ...typography.caption, color: '#86efac', fontWeight: '600' },
+
+  inviteSection: { marginBottom: spacing.sm },
 
   upgradeBanner: {
     marginHorizontal: spacing.xs,
@@ -749,14 +829,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontFamily: 'BarlowCondensed_700Bold',
   },
-  memberCountBadge: {
-    backgroundColor: '#E5EEF7',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  memberCountText: { ...typography.tiny, color: colors.textMuted, fontWeight: '600' },
-
   memberCard: {
     backgroundColor: colors.surface,
     borderRadius: 14,
@@ -766,43 +838,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8EEF5',
   },
+  memberRow: { flexDirection: 'row', alignItems: 'center' },
+  memberInfo: { flex: 1 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'baseline' },
+  memberName: { fontSize: 17, color: colors.text, fontFamily: 'BarlowCondensed_700Bold' },
+  meTag: { fontSize: 14, color: '#C58F12', fontFamily: 'BarlowCondensed_700Bold' },
   memberStatus: {
     marginTop: 2,
     color: '#6B7C89',
     fontSize: 14,
     fontFamily: 'BarlowCondensed_500Medium',
   },
-  memberStripe: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: radius.md,
-    borderBottomLeftRadius: radius.md,
-  },
-  memberStripeAdmin: {
-    backgroundColor: colors.accent,
-  },
-  memberStripeMember: {
-    backgroundColor: colors.primaryLight,
-  },
-  memberRow: { flexDirection: 'row', alignItems: 'center' },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    backgroundColor: '#ECEFF1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  avatarMe: { backgroundColor: '#ECEFF1' },
-  avatarText: { fontSize: 20, color: colors.text, fontFamily: 'BarlowCondensed_700Bold' },
-  memberInfo: { flex: 1 },
-  memberNameRow: { flexDirection: 'row', alignItems: 'baseline' },
-  memberName: { fontSize: 17, color: colors.text, fontFamily: 'BarlowCondensed_700Bold' },
-  meTag: { fontSize: 14, color: '#C58F12', fontFamily: 'BarlowCondensed_700Bold' },
   adminBadge: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -815,17 +861,6 @@ const styles = StyleSheet.create({
     fontFamily: 'BarlowCondensed_800ExtraBold',
     letterSpacing: 1,
   },
-  roleBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.borderLight,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    borderRadius: radius.xs,
-    marginTop: 3,
-  },
-  roleBadgeAdmin: { backgroundColor: colors.accentLight },
-  roleText: { ...typography.tiny, color: colors.textMuted },
-  roleTextAdmin: { color: colors.accent, fontWeight: '600' },
   memberActionBtn: {
     width: 30,
     height: 30,
@@ -836,7 +871,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D6E2F1',
   },
-
   confirmRow: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
@@ -862,7 +896,97 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   confirmRemoveText: { ...typography.caption, color: '#fff', fontWeight: '600' },
-
   emptyList: { alignItems: 'center', paddingVertical: spacing.lg },
   emptyListText: { ...typography.body, color: colors.textMuted },
+
+  // ── Upgrade Modal ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    maxHeight: '85%',
+    ...shadows.lg,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  modalTitle: { ...typography.h2, color: colors.text },
+  modalSubtitle: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currentPlanChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.successLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    marginBottom: spacing.md,
+  },
+  currentPlanChipText: {
+    ...typography.caption,
+    color: colors.success,
+    fontWeight: '700',
+  },
+  upgradeErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.errorLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  upgradeErrorText: { ...typography.caption, color: colors.error },
+  modalScroll: { flexGrow: 0 },
+  upgradePlanCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  upgradePlanTop: { flexDirection: 'row', alignItems: 'center' },
+  upgradePlanIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  upgradePlanInfo: { flex: 1 },
+  upgradePlanSlots: { ...typography.h4, color: colors.text },
+  upgradePlanDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  upgradePlanPriceWrap: { alignItems: 'flex-end' },
+  upgradePlanDiff: { ...typography.h2, color: colors.primary },
+  upgradePlanFull: { ...typography.tiny, color: colors.textMuted, marginTop: 2 },
 });
