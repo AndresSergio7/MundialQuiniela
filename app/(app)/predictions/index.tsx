@@ -666,95 +666,94 @@ export default function PredictionsScreen() {
       )}
 
       {!loading && (
-        <>
-          {/* Backdrop para cerrar el menú */}
-          {showFabMenu && (
-            <TouchableOpacity
-              style={styles.fabBackdrop}
-              activeOpacity={1}
-              onPress={() => setShowFabMenu(false)}
-            />
-          )}
+        <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: insets.bottom + 64 }]}>
+          <TouchableOpacity
+            style={[styles.fab, showFabMenu && styles.fabActive]}
+            activeOpacity={0.85}
+            onPress={() => setShowFabMenu(v => !v)}
+          >
+            <Ionicons name={showFabMenu ? 'close' : 'flash'} size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
 
-          <View pointerEvents="box-none" style={[styles.fabWrap, { bottom: insets.bottom + 64 }]}>
-            {/* Opciones expandibles */}
-            {showFabMenu && (
-              <View style={styles.fabMenu}>
-                {/* Enviar / Reenviar */}
-                {showEditActions && (
-                  <TouchableOpacity
-                    style={[
-                      styles.fabMenuItem,
-                      styles.fabMenuItemAccent,
-                      (!allFilled || submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
-                    ]}
-                    onPress={() => { setShowFabMenu(false); setShowConfirmSubmit(true); }}
-                    disabled={!allFilled || submitting || importing || autosaveStatus === 'saving'}
-                    activeOpacity={0.82}
-                  >
-                    {submitting
-                      ? <ActivityIndicator size="small" color={colors.navy} />
-                      : <Ionicons name="send" size={16} color={colors.navy} />
-                    }
-                    <Text style={styles.fabMenuItemTextAccent}>
-                      {isFinal ? 'Reenviar quiniela' : 'Enviar quiniela'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+      {/* FAB Menu — Modal para z-index correcto en Android */}
+      <Modal
+        visible={!loading && showFabMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFabMenu(false)}
+      >
+        <View style={StyleSheet.absoluteFillObject}>
+          {/* Backdrop táctil */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowFabMenu(false)}
+          />
 
-                {/* Importar */}
-                {showEditActions && (
-                  <TouchableOpacity
-                    style={[
-                      styles.fabMenuItem,
-                      (submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
-                    ]}
-                    onPress={() => { setShowFabMenu(false); handleImportOpen(); }}
-                    disabled={submitting || importing || autosaveStatus === 'saving'}
-                    activeOpacity={0.82}
-                  >
-                    {importing
-                      ? <ActivityIndicator size="small" color={colors.primary} />
-                      : <Ionicons name="copy-outline" size={16} color={colors.primary} />
-                    }
-                    <Text style={styles.fabMenuItemText}>Importar predicciones</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* PDF */}
-                <TouchableOpacity
-                  style={[
-                    styles.fabMenuItem,
-                    (printableRows.length === 0 || exportingPdf) && styles.fabMenuItemDisabled,
-                  ]}
-                  onPress={() => { setShowFabMenu(false); handleExportPdf(); }}
-                  disabled={printableRows.length === 0 || exportingPdf}
-                  activeOpacity={0.82}
-                >
-                  {exportingPdf
-                    ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <Ionicons name="document-text-outline" size={16} color={colors.primary} />
-                  }
-                  <Text style={styles.fabMenuItemText}>Descargar PDF</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Card del menú anclada arriba del FAB */}
+          <View style={[styles.fabMenuCard, { bottom: insets.bottom + 78 + 64 + 52 + 12, right: spacing.md }]}>
+            {/* Enviar / Reenviar */}
+            {showEditActions && (
+              <TouchableOpacity
+                style={[
+                  styles.fabMenuItem,
+                  styles.fabMenuItemAccent,
+                  (!allFilled || submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
+                ]}
+                onPress={() => { setShowFabMenu(false); setShowConfirmSubmit(true); }}
+                disabled={!allFilled || submitting || importing || autosaveStatus === 'saving'}
+                activeOpacity={0.82}
+              >
+                {submitting
+                  ? <ActivityIndicator size="small" color={colors.navy} />
+                  : <Ionicons name="send" size={16} color={colors.navy} />
+                }
+                <Text style={styles.fabMenuItemTextAccent}>
+                  {isFinal ? 'Reenviar quiniela' : 'Enviar quiniela'}
+                </Text>
+              </TouchableOpacity>
             )}
 
-            {/* Botón FAB */}
+            {/* Importar */}
+            {showEditActions && (
+              <TouchableOpacity
+                style={[
+                  styles.fabMenuItem,
+                  (submitting || importing || autosaveStatus === 'saving') && styles.fabMenuItemDisabled,
+                ]}
+                onPress={() => { setShowFabMenu(false); handleImportOpen(); }}
+                disabled={submitting || importing || autosaveStatus === 'saving'}
+                activeOpacity={0.82}
+              >
+                {importing
+                  ? <ActivityIndicator size="small" color={colors.primary} />
+                  : <Ionicons name="copy-outline" size={16} color={colors.primary} />
+                }
+                <Text style={styles.fabMenuItemText}>Importar predicciones</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* PDF */}
             <TouchableOpacity
-              style={[styles.fab, showFabMenu && styles.fabActive]}
-              activeOpacity={0.85}
-              onPress={() => setShowFabMenu(v => !v)}
+              style={[
+                styles.fabMenuItem,
+                (printableRows.length === 0 || exportingPdf) && styles.fabMenuItemDisabled,
+              ]}
+              onPress={() => { setShowFabMenu(false); handleExportPdf(); }}
+              disabled={printableRows.length === 0 || exportingPdf}
+              activeOpacity={0.82}
             >
-              <Ionicons
-                name={showFabMenu ? 'close' : 'flash'}
-                size={22}
-                color="#fff"
-              />
+              {exportingPdf
+                ? <ActivityIndicator size="small" color={colors.primary} />
+                : <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+              }
+              <Text style={styles.fabMenuItemText}>Descargar PDF</Text>
             </TouchableOpacity>
           </View>
-        </>
-      )}
+        </View>
+      </Modal>
 
       {/* Confirm submit */}
       <Modal visible={showConfirmSubmit} transparent animationType="fade">
@@ -1114,9 +1113,8 @@ const styles = StyleSheet.create({
   },
   // FAB expandible
   fabBackdrop: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    zIndex: 10,
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   fabWrap: {
     position: 'absolute',
@@ -1125,26 +1123,33 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   fabMenu: {
-    marginBottom: spacing.sm,
+    position: 'absolute',
     gap: spacing.xs + 2,
     alignItems: 'flex-end',
+  },
+  fabMenuCard: {
+    position: 'absolute',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#D3E4D9',
+    minWidth: 210,
+    ...shadows.lg,
   },
   fabMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: '#D3E4D9',
-    minWidth: 190,
-    ...shadows.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF4F0',
   },
   fabMenuItemAccent: {
     backgroundColor: colors.accent,
-    borderColor: '#C69812',
+    borderBottomColor: '#C69812',
   },
   fabMenuItemDisabled: { opacity: 0.4 },
   fabMenuItemText: {
