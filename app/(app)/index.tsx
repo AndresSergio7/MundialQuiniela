@@ -18,7 +18,7 @@ import { usePoolStore } from '@/store/pool';
 import { usePendingInviteStore } from '@/store/pendingInvite';
 import { deletePoolByUser, leavePool, listMyPools } from '@/services/pools.service';
 import { joinViaInvite } from '@/services/invites.service';
-import { getSubmissionsForPools } from '@/services/predictions.service';
+import { getSubmissionsForPools, countUserPredictions } from '@/services/predictions.service';
 import { fetchAllMatches } from '@/services/matches.service';
 import { getTournamentConfig, DEFAULT_CONFIG } from '@/lib/tournament';
 import { getStandingsWithAllMembers } from '@/services/standings.service';
@@ -42,6 +42,8 @@ export default function HomeScreen() {
 
   const [submissions, setSubmissions] = useState<Record<string, Submission | null>>({});
   const [kickoffDate, setKickoffDate] = useState<Date>(DEFAULT_CONFIG.firstMatchKickoff);
+  const [totalGroupMatches, setTotalGroupMatches] = useState(DEFAULT_CONFIG.totalMatches);
+  const [filledPredictions, setFilledPredictions] = useState(0);
   const [confirmPool, setConfirmPool] = useState<Pool | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -75,9 +77,13 @@ export default function HomeScreen() {
     setCurrentPool(pool);
     setShowPoolPicker(false);
     if (!user) return;
-    const data = await getStandingsWithAllMembers(pool.id);
+    const [data, count] = await Promise.all([
+      getStandingsWithAllMembers(pool.id),
+      countUserPredictions(pool.id, user.id),
+    ]);
     setStandings(data);
     setUserStanding(data.find(s => s.user_id === user.id) ?? null);
+    setFilledPredictions(count);
   }, [setCurrentPool, user]);
 
   useFocusEffect(
@@ -104,7 +110,10 @@ export default function HomeScreen() {
   }, [pools, user]);
 
   useEffect(() => {
-    getTournamentConfig().then(cfg => setKickoffDate(cfg.firstMatchKickoff));
+    getTournamentConfig().then(cfg => {
+      setKickoffDate(cfg.firstMatchKickoff);
+      setTotalGroupMatches(cfg.totalMatches);
+    });
   }, []);
 
   useEffect(() => {
@@ -121,6 +130,15 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => { fetchStandings(); }, [fetchStandings]);
+
+  useEffect(() => {
+    if (!currentPool || !user) { setFilledPredictions(0); return; }
+    let cancelled = false;
+    countUserPredictions(currentPool.id, user.id).then(n => {
+      if (!cancelled) setFilledPredictions(n);
+    });
+    return () => { cancelled = true; };
+  }, [currentPool?.id, user?.id]);
 
   useEffect(() => {
     if (!user) {
@@ -179,13 +197,8 @@ export default function HomeScreen() {
   const submittedPools = Object.values(submissions).filter((s) => s?.is_valid).length;
   const finalPools = Object.values(submissions).filter((s) => s?.is_final).length;
 
-  const totalMatches = 36;
-  const currentSub = currentPool ? submissions[currentPool.id] : null;
-  const filledCount = currentSub?.is_valid
-    ? totalMatches
-    : currentSub
-      ? Math.max(0, totalMatches - (currentSub.validation_errors?.length ?? 0))
-      : 0;
+  const totalMatches = totalGroupMatches;
+  const filledCount = filledPredictions;
   const remainingPredictions = Math.max(0, totalMatches - filledCount);
   const isCompactHero = width < 390;
 

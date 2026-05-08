@@ -32,15 +32,15 @@ import { getCountryFlagFallback, getCountryFlagSvgUrl, getCountryFlagPngUrl } fr
 import type { Match, Pool, PredictionMap, Submission } from '@/types';
 
 // ── Secciones ordenadas ──────────────────────────────────────────────────────
-const SECTION_ORDER = ['A','B','C','D','E','F','G','H','I','J','K','L','R32','R16','QF','SF','3P','F'] as const;
-const KNOCKOUT_GROUPS = new Set(['R32','R16','QF','SF','3P','F']);
+const SECTION_ORDER = ['A','B','C','D','E','F','G','H','I','J','K','L','R32','R16','QF','SF','3P','FIN'] as const;
+const KNOCKOUT_GROUPS = new Set(['R32','R16','QF','SF','3P','FIN']);
 const KNOCKOUT_META: Record<string, { label: string; title: string; subtitle: string }> = {
-  R32: { label: '16avos',   title: 'Ronda de 32',       subtitle: 'Las llaves se definen al terminar la fase de grupos.' },
-  R16: { label: 'Octavos',  title: 'Octavos de Final',  subtitle: 'Las llaves se definen al terminar la Ronda de 32.' },
-  QF:  { label: 'Cuartos',  title: 'Cuartos de Final',  subtitle: 'Las llaves se definen al terminar los Octavos.' },
-  SF:  { label: 'Semis',    title: 'Semifinales',        subtitle: 'Las llaves se definen al terminar los Cuartos.' },
-  '3P':{ label: '3° Lugar', title: 'Tercer Lugar',       subtitle: 'Los equipos se definen en las Semifinales.' },
-  F:   { label: 'Final',    title: 'Gran Final',          subtitle: 'Los equipos se definen en las Semifinales.' },
+  R32:  { label: '16avos',   title: 'Ronda de 32',       subtitle: 'Las llaves se definen al terminar la fase de grupos.' },
+  R16:  { label: 'Octavos',  title: 'Octavos de Final',  subtitle: 'Las llaves se definen al terminar la Ronda de 32.' },
+  QF:   { label: 'Cuartos',  title: 'Cuartos de Final',  subtitle: 'Las llaves se definen al terminar los Octavos.' },
+  SF:   { label: 'Semis',    title: 'Semifinales',        subtitle: 'Las llaves se definen al terminar los Cuartos.' },
+  '3P': { label: '3° Lugar', title: 'Tercer Lugar',       subtitle: 'Los equipos se definen en las Semifinales.' },
+  FIN:  { label: 'Final',    title: 'Gran Final',          subtitle: 'Los equipos se definen en las Semifinales.' },
 };
 // ─────────────────────────────────────────────────────────────────────────────
 

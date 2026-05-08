@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,10 @@ import {
   Modal,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
 import { supabase } from '@/lib/supabase';
 import { purchasePoolPlan } from '@/lib/payments';
@@ -34,9 +35,12 @@ export default function PurchaseScreen() {
   const setCurrentPool = usePoolStore((s) => s.setCurrentPool);
   const currentPool = usePoolStore((s) => s.currentPool);
 
+  const [hasAdminPool, setHasAdminPool] = useState(false);
+
   const [purchasing, setPurchasing] = useState<PoolPlanId | null>(null);
   const [unusedEntitlements, setUnusedEntitlements] = useState<Entitlement[]>([]);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [showNameModal, setShowNameModal] = useState(false);
   const [poolName, setPoolName] = useState('');
@@ -44,9 +48,28 @@ export default function PurchaseScreen() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
-  useEffect(() => {
-    refreshUnused();
-  }, []);
+  const refreshScreen = useCallback(async () => {
+    if (!user) return;
+    setRefreshing(true);
+    const [nextPools] = await Promise.all([
+      listMyPools(user.id),
+      refreshUnused(),
+    ]);
+    setHasAdminPool(nextPools.some((p) => p.admin_id === user.id && p.max_members === 2));
+    setPools(nextPools);
+    const activePool = usePoolStore.getState().currentPool;
+    if (activePool && !nextPools.some(p => p.id === activePool.id)) {
+      setCurrentPool(nextPools[0] ?? null);
+    }
+    setRefreshing(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshScreen();
+    }, [refreshScreen]),
+  );
 
   async function refreshUnused(): Promise<Entitlement[]> {
     if (!user) return [];
@@ -143,7 +166,18 @@ export default function PurchaseScreen() {
 
   return (
     <>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshScreen}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
+      >
 
         {/* Hero header */}
         <View style={styles.hero}>
@@ -230,16 +264,27 @@ export default function PurchaseScreen() {
 
           {unusedEntitlements.length === 0 && (
             <View style={styles.freeCreateCard}>
-              <Text style={styles.freeCreateTitle}>¿Primero quieres crear tu quiniela?</Text>
-              <Text style={styles.freeCreateSub}>
-                Puedes crearla gratis ahora mismo. Solo pagarás cuando quieras invitar participantes.
-              </Text>
-              <Button
-                title="Crear quiniela gratis"
-                variant="outline"
-                onPress={openNameModalWithoutPurchase}
-                style={{ marginTop: spacing.sm }}
-              />
+              {hasAdminPool ? (
+                <>
+                  <Text style={styles.freeCreateTitle}>Ya tienes una quiniela gratuita</Text>
+                  <Text style={styles.freeCreateSub}>
+                    Solo se permite una quiniela gratis por cuenta. Compra un plan para crear otra.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.freeCreateTitle}>¿Primero quieres crear tu quiniela?</Text>
+                  <Text style={styles.freeCreateSub}>
+                    Puedes crearla gratis con hasta 2 participantes. Solo pagarás cuando quieras crecer.
+                  </Text>
+                  <Button
+                    title="Crear quiniela gratis"
+                    variant="outline"
+                    onPress={openNameModalWithoutPurchase}
+                    style={{ marginTop: spacing.sm }}
+                  />
+                </>
+              )}
             </View>
           )}
 
@@ -308,11 +353,9 @@ export default function PurchaseScreen() {
           </View>
         </View>
 
-        <Text style={styles.legal}>
-          {isWeb
-            ? 'Modo demo — no se procesa ningún pago real.'
-            : 'Pago procesado por App Store / Google Play.\nUna compra por quiniela creada.'}
-        </Text>
+        {isWeb && (
+          <Text style={styles.legal}>Modo demo — no se procesa ningún pago real.</Text>
+        )}
       </ScrollView>
 
       {/* Name modal */}
@@ -326,7 +369,7 @@ export default function PurchaseScreen() {
             <Text style={styles.modalSubtitle}>
               {selectedEntitlementId
                 ? `Capacidad: ${unusedEntitlements.find(e => e.id === selectedEntitlementId)?.base_slots ?? '?'} participantes`
-                : 'Se creará con 1 participante. Al invitar, te pediremos elegir un plan.'}
+                : 'Se creará con hasta 2 participantes. Al invitar, te pediremos elegir un plan.'}
             </Text>
 
             <Input

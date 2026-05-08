@@ -301,7 +301,7 @@ export default function InvitesScreen() {
   return (
     <View style={styles.screen}>
       <PoolSelectorBar
-        contextLabel="INVITACIONES"
+        contextLabel="PARTICIPANTES"
         rightBadgeText={`${members.length}/${currentPool.max_members}`}
         onPoolChange={(pool) => handlePoolSelect(pool)}
       />
@@ -431,7 +431,7 @@ export default function InvitesScreen() {
               )}
 
               <View style={styles.listHeader}>
-                <Text style={styles.listHeaderTitle}>EN LA LIGA · {members.length}</Text>
+                <Text style={styles.listHeaderTitle}>PARTICIPANTES · {members.length}</Text>
               </View>
             </View>
           }

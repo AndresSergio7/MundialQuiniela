@@ -230,6 +230,16 @@ export async function submitQuinielaResult(
   }
 }
 
+export async function countUserPredictions(poolId: string, userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('predictions')
+    .select('*', { count: 'exact', head: true })
+    .eq('pool_id', poolId)
+    .eq('user_id', userId);
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export async function getSubmissionsForPools(
   userId: string,
   poolIds: string[],

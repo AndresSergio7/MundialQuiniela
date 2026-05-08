@@ -93,12 +93,25 @@ export async function createPool(params: {
     if (data?.has_app_access) entitlement = data;
   }
 
+  if (!entitlement) {
+    const { data: existingFree } = await supabase
+      .from('pools')
+      .select('id')
+      .eq('admin_id', params.adminId)
+      .eq('max_members', 2)
+      .limit(1)
+      .maybeSingle();
+    if (existingFree) {
+      throw new AppError('POOL_LIMIT_REACHED', 'Ya tienes una quiniela gratuita. Compra un plan para crear otra.');
+    }
+  }
+
   const { data: pool, error: poolError } = await supabase
     .from('pools')
     .insert({
       name: params.name,
       admin_id: params.adminId,
-      max_members: entitlement?.base_slots ?? 1,
+      max_members: entitlement?.base_slots ?? 2,
     })
     .select()
     .single();

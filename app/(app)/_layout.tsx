@@ -17,7 +17,7 @@ const HEADER_META: Record<string, { title: string; subtitle: string; icon: keyof
   'predictions/index': { title: 'Quiniela', subtitle: 'Captura tus marcadores', icon: 'football' },
   'live/index':    { title: 'En Vivo', subtitle: 'Partidos de hoy', icon: 'radio' },
   'standings/index': { title: 'Tabla', subtitle: 'Clasificacion en tiempo real', icon: 'podium' },
-  'invites/index': { title: 'Liga', subtitle: 'Tu grupo', icon: 'people' },
+  'invites/index': { title: 'Participantes', subtitle: 'Tu grupo', icon: 'people' },
   'purchase/index': { title: 'Comprar', subtitle: 'Planes y acceso', icon: 'card' },
   'debug/index': { title: 'Debug', subtitle: 'Herramientas tecnicas', icon: 'construct' },
   'profile/index': { title: 'Mi perfil', subtitle: 'Cuenta y metodos de pago', icon: 'person-circle' },
@@ -165,7 +165,7 @@ export default function AppLayout() {
       <Tabs.Screen
         name="invites/index"
         options={{
-          title: 'Liga',
+          title: 'Participantes',
           tabBarIcon: ({ color, focused }) => (
             <TabGlyph icon="people" color={color} focused={focused} />
           ),
